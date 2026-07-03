@@ -1,0 +1,17 @@
+{
+  "name": "the-quadrant-pickleball",
+  "private": true,
+  "scripts": {
+    "check:js": "node --check supabase-config.js && node --check auth.js && node --check admin.js && node --check script.js && node --check create-accounts.js && node --check setup-db.js && node --check _worker.js",
+    "check:functions": "deno check supabase/functions/create-payment-session/index.ts supabase/functions/payment-webhook/index.ts supabase/functions/manage-account/index.ts supabase/functions/integration-status/index.ts supabase/functions/send-confirmation-email/index.ts supabase/functions/send-reschedule-email/index.ts supabase/functions/send-telegram-notification/index.ts supabase/functions/verify-gcash-receipt/index.ts",
+    "check:audit": "npm audit --omit=dev --audit-level=moderate",
+    "launch:check": "npm run check:js && npm run check:functions && npm run check:audit"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.108.1",
+    "pg": "^8.21.0"
+  },
+  "devDependencies": {
+    "wrangler": "^4.100.0"
+  }
+}

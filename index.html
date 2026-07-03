@@ -4284,7 +4284,7 @@ const fmtDc = s => {
   return new Date(s + 'T00:00:00').toLocaleDateString('en-PH', {month:'short',day:'numeric'});
 };
 const fmtOpenPlayMeta = (courtName, date, start, end) => `${courtName || 'Court'} · ${fmtDc(date)} · ${fmtTc(start)}–${fmtTc(end)}`;
-const genRef = () => 'PB-' + Date.now().toString(36).toUpperCase() + '-' + Math.random().toString(36).substr(2,4).toUpperCase();
+const genRef = () => 'TQ-' + Date.now().toString(36).toUpperCase() + '-' + Math.random().toString(36).substr(2,4).toUpperCase();
 const nowHour = () => new Date().getHours();
 const todayStr = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };
 const isToday = d => d === todayStr();

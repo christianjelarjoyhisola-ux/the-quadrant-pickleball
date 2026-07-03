@@ -17,10 +17,14 @@ const PB_BRAND_NAME = PB_BRAND_META.name || 'The Quadrant';
 const PB_BRAND_ADMIN_EMAIL = PB_BRAND_META.adminEmail || 'owner@thequadrant.local';
 
 const PB_IS_LOCAL_HOST = ['localhost', '127.0.0.1', '::1'].includes(location.hostname);
+const PB_IS_PRODUCTION_HOST = location.hostname === 'the-quadrant-pickleball.pages.dev';
 const PB_DATA_MODE_KEY = 'pb_data_mode';
-const PB_ALLOW_HOSTED_DEMO = /\.pages\.dev$/i.test(location.hostname) || /preview|demo/i.test(location.hostname);
+const PB_ALLOW_HOSTED_DEMO = !PB_IS_PRODUCTION_HOST && (/\.pages\.dev$/i.test(location.hostname) || /preview|demo/i.test(location.hostname));
 
 const pbDataParams = new URLSearchParams(location.search);
+if (PB_IS_PRODUCTION_HOST) {
+  localStorage.removeItem(PB_DATA_MODE_KEY);
+}
 if (PB_IS_LOCAL_HOST || PB_ALLOW_HOSTED_DEMO) {
   if (['1', 'true', 'local', 'demo'].includes((pbDataParams.get('localData') || pbDataParams.get('demo') || '').toLowerCase())) {
     localStorage.setItem(PB_DATA_MODE_KEY, 'local');
@@ -986,6 +990,12 @@ window.DB = {
     }
   },
 
+  async syncPaymentSession(payload, options = {}) {
+    return _invokeEdgeFunction('sync-payment-session', payload, {
+      allowFailure: options.allowFailure !== false,
+    });
+  },
+
   async sendConfirmationEmail(booking, options = {}) {
     if (!booking?.email) return { ok: false, skipped: true, reason: 'No customer email' };
     return _invokeEdgeFunction('send-confirmation-email', _bookingEmailPayload(booking), {
@@ -1775,6 +1785,7 @@ window.DB = {
     clearCache() {},
 
     async createPaymentSession() { throw new Error('Online checkout is disabled in local data mode.'); },
+    async syncPaymentSession() { return { ok: false, skipped: true, reason: 'Local data mode' }; },
     async sendConfirmationEmail() { return { ok: true, skipped: true, reason: 'Local data mode' }; },
     async sendRescheduleEmail() { return { ok: true, skipped: true, reason: 'Local data mode' }; },
     async sendTelegramNotification() { return { ok: true, skipped: true, reason: 'Local data mode' }; },

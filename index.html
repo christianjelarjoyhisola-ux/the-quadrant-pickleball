@@ -4255,13 +4255,19 @@ function isDigitalPayMethod(method) {
 }
 
 function paymentMethodName(method) {
-  return ({ gcash: 'GCash', bdopay: 'BDO Pay', maya: 'Maya', gotyme: 'GoTyme', pnb: 'PNB', cash: 'Cash' }[String(method || '').toLowerCase()] || 'Payment');
+  const key = String(method || '').toLowerCase();
+  if (key === 'gcash' && isPayMongoCheckoutAvailable()) return 'QRPh';
+  return ({ gcash: 'GCash', bdopay: 'BDO Pay', maya: 'Maya', gotyme: 'GoTyme', pnb: 'PNB', cash: 'Cash' }[key] || 'Payment');
 }
 
 function paymentReceiverKey(method) {
   return method === 'bdopay' || method === 'maya' ? 'gcash' : method;
 }
 let paymentWatch = { ref: null, timer: null, tries: 0 };
+
+function isPayMongoCheckoutAvailable() {
+  return !!(gcashSettings.checkoutEnabled && paymentMethods.gcash);
+}
 
 /* =============================================
    HELPERS
@@ -4599,7 +4605,7 @@ function applyPaymentSettings(settings) {
       qrImage: settings.pnb_qr_image || '',
     },
   };
-  gcashSettings.checkoutEnabled = settings.gcash_checkout_enabled === '1';
+  gcashSettings.checkoutEnabled = settings.gcash_checkout_enabled !== '0';
   gcashSettings.checkoutUrl = (settings.gcash_checkout_url || '').trim();
   gcashSettings.merchantNumber = paymentReceiverSettings.gcash.number;
   gcashSettings.merchantName = paymentReceiverSettings.gcash.name;
@@ -4654,15 +4660,27 @@ function applyPaymentSettings(settings) {
 }
 
 function applyPaymentMethodVisibility() {
-  if ($('payOptCash')) $('payOptCash').style.display = paymentMethods.cash ? '' : 'none';
-  if ($('payOptGcash')) $('payOptGcash').style.display = paymentMethods.gcash ? '' : 'none';
-  if ($('payOptBdopay')) $('payOptBdopay').style.display = paymentMethods.bdopay ? '' : 'none';
-  if ($('payOptMaya')) $('payOptMaya').style.display = paymentMethods.maya ? '' : 'none';
-  if ($('payOptGotyme')) $('payOptGotyme').style.display = paymentMethods.gotyme ? '' : 'none';
-  if ($('payOptPnb')) $('payOptPnb').style.display = paymentMethods.pnb ? '' : 'none';
+  const checkoutMode = isPayMongoCheckoutAvailable();
+  const enabledMethods = checkoutMode ? ['gcash'] : ALL_PAYMENT_METHODS.filter(m => paymentMethods[m]);
+  const hasAny = enabledMethods.length > 0;
 
-  const hasAny = ALL_PAYMENT_METHODS.some(m => paymentMethods[m]);
-  const enabledMethods = ALL_PAYMENT_METHODS.filter(m => paymentMethods[m]);
+  if ($('payOptCash')) $('payOptCash').style.display = !checkoutMode && paymentMethods.cash ? '' : 'none';
+  if ($('payOptGcash')) $('payOptGcash').style.display = paymentMethods.gcash ? '' : 'none';
+  if ($('payOptBdopay')) $('payOptBdopay').style.display = !checkoutMode && paymentMethods.bdopay ? '' : 'none';
+  if ($('payOptMaya')) $('payOptMaya').style.display = !checkoutMode && paymentMethods.maya ? '' : 'none';
+  if ($('payOptGotyme')) $('payOptGotyme').style.display = !checkoutMode && paymentMethods.gotyme ? '' : 'none';
+  if ($('payOptPnb')) $('payOptPnb').style.display = !checkoutMode && paymentMethods.pnb ? '' : 'none';
+
+  const gcashOpt = $('payOptGcash');
+  if (gcashOpt) {
+    const icon = gcashOpt.querySelector('.pay-ic');
+    const label = gcashOpt.querySelector('.pay-lb');
+    const sub = gcashOpt.querySelector('.pay-sub');
+    if (icon) icon.textContent = checkoutMode ? 'QR' : '📲';
+    if (label) label.textContent = checkoutMode ? 'QRPh' : 'GCash';
+    if (sub) sub.textContent = checkoutMode ? 'Secure PayMongo checkout' : 'Scan QR · enter ref #';
+  }
+
   if ($('payMethodBlock')) $('payMethodBlock').style.display = hasAny ? '' : 'none';
   if ($('payMethodsHint')) {
     $('payMethodsHint').style.display = hasAny ? 'none' : '';
@@ -4670,7 +4688,7 @@ function applyPaymentMethodVisibility() {
   }
 
   const selected = $('bPay')?.value || '';
-  if (selected && !paymentMethods[selected]) {
+  if (selected && !enabledMethods.includes(selected)) {
     $('bPay').value = '';
     document.querySelectorAll('.pay-opt').forEach(el => el.classList.remove('on'));
     $('gcashBox').classList.remove('show');
@@ -4688,9 +4706,9 @@ function applyPaymentMethodVisibility() {
 function preparePaymentStep() {
   applyPaymentMethodVisibility();
   updatePaymentWindowText();
-  const enabledMethods = ALL_PAYMENT_METHODS.filter(m => paymentMethods[m]);
+  const enabledMethods = isPayMongoCheckoutAvailable() ? ['gcash'] : ALL_PAYMENT_METHODS.filter(m => paymentMethods[m]);
   const selected = $('bPay')?.value || '';
-  const method = selected && paymentMethods[selected] ? selected : enabledMethods[0];
+  const method = selected && enabledMethods.includes(selected) ? selected : enabledMethods[0];
 
   if (method) {
     pickPay(method);
@@ -4728,6 +4746,8 @@ function updatePaymentWindowText() {
 }
 
 function paymentInstructionText() {
+  if (isPayMongoCheckoutAvailable()) return 'Pay securely through QRPh checkout.';
+
   const digital = DIGITAL_PAYMENT_METHODS.filter(m => paymentMethods[m]).map(paymentMethodName);
 
   const digitalText = digital.length === 0 ? ''
@@ -4744,7 +4764,6 @@ function paymentInstructionText() {
 async function createSecurePaymentSession(booking) {
   const payload = {
     bookingRef: booking.ref,
-    amountPhp: Number(booking.downpayment || 0),
     customer: {
       name: booking.fullName,
       email: booking.email,
@@ -4758,6 +4777,42 @@ async function createSecurePaymentSession(booking) {
     },
   };
   return DB.createPaymentSession(payload);
+}
+
+function goToCheckout(checkoutUrl) {
+  if (!checkoutUrl) return false;
+  toast('Opening secure QRPh checkout...', 'ok');
+  window.location.assign(checkoutUrl);
+  return true;
+}
+
+async function saveBookingRowFromHold(row, heldRefs = new Set()) {
+  const ref = String(row?.ref || '');
+  if (!ref) {
+    await DB.addBooking(row);
+    return 'inserted';
+  }
+
+  const existing = await DB.getBookingByRef(ref).catch(() => null);
+  if (existing || heldRefs.has(ref)) {
+    await DB.updateBooking(ref, {
+      fullName:      row.fullName,
+      contactNumber: row.contactNumber,
+      email:         row.email,
+      paymentMethod: row.paymentMethod,
+      paymentFlow:   row.paymentFlow,
+      gcashRef:      row.gcashRef,
+      downpayment:   row.downpayment,
+      total:         row.total,
+      paymentStatus: row.paymentStatus,
+      status:        row.status,
+      createdAt:     row.createdAt,
+    });
+    return 'updated';
+  }
+
+  await DB.addBooking(row);
+  return 'inserted';
 }
 
 function extractErrMsg(err) {
@@ -4810,12 +4865,20 @@ function startPaymentWatch(ref) {
   paymentWatch.ref = ref;
   paymentWatch.timer = setInterval(async () => {
     paymentWatch.tries += 1;
-    if (paymentWatch.tries > 60) { stopPaymentWatch(); return; }
-    const b = await DB.getBookingByRef(ref);
+    if (paymentWatch.tries > 120) { stopPaymentWatch(); return; }
+    let b = await DB.getBookingByRef(ref);
     if (!b) return;
+    if (b.paymentStatus !== 'paid' && paymentWatch.tries % 2 === 0 && typeof DB.syncPaymentSession === 'function') {
+      const sync = await DB.syncPaymentSession({ bookingRef: ref }, { allowFailure: true }).catch(() => null);
+      if (sync?.paid || sync?.status === 'paid') {
+        b = await DB.getBookingByRef(ref).catch(() => b) || b;
+        b.paymentStatus = 'paid';
+      }
+    }
     if (b.paymentStatus === 'paid') {
       stopPaymentWatch();
-      toast('Payment received. Booking is now waiting for admin confirmation.', 'ok');
+      b.status = 'confirmed';
+      toast('Payment received. Booking confirmed.', 'ok');
       await renderCourts();
       if (court && $('bDate').value) await renderSlots();
       if ($('invModal') && $('invModal').classList.contains('show')) showInvoice(b);
@@ -5716,7 +5779,7 @@ function wizGoTo(n) {
     }
   }
   $('wizBackBtn').textContent = n <= wizStartStep ? '✕ Cancel' : '← Back';
-  $('wizNextBtn').textContent = n === 5 ? '🎾 Confirm Booking' : 'Next →';
+  $('wizNextBtn').textContent = n === 5 ? (isPayMongoCheckoutAvailable() ? 'Open QRPh Checkout' : 'Confirm Booking') : 'Next ->';
   if (n === 2) { renderSlots(); }
   if (n === 3) { updateWiz3Summary(); }
   if (n === 4) {
@@ -6388,6 +6451,11 @@ function updatePrice() {
    PAYMENT
    ============================================= */
 function pickPay(m) {
+  const checkoutMode = isPayMongoCheckoutAvailable();
+  if (checkoutMode && m !== 'gcash') {
+    toast('QRPh checkout is the available payment method right now.', 'err');
+    return;
+  }
   if (!paymentMethods[m]) {
     toast('This payment method is currently unavailable.', 'err');
     return;
@@ -6399,11 +6467,13 @@ function pickPay(m) {
   const methodNote = $('payMethodNote');
   if (methodNote) {
     const notes = {
-      gcash: [
-        'GCash to GCash only.',
-        'BDO Pay/InstaPay receipts will be rejected.',
-        'Please choose the correct payment method before paying.',
-      ],
+      gcash: checkoutMode
+        ? 'QRPh checkout will open securely through PayMongo after you confirm the booking.'
+        : [
+          'GCash to GCash only.',
+          'BDO Pay/InstaPay receipts will be rejected.',
+          'Please choose the correct payment method before paying.',
+        ],
       bdopay: [
         'BDO Pay to GCash only.',
         'GCash-to-GCash receipts will be rejected.',
@@ -6428,15 +6498,15 @@ function pickPay(m) {
   ['gcPat50','gtPat50','pnPat50'].forEach(id => $(id)?.classList.add('on'));
   ['gcPat100','gtPat100','pnPat100'].forEach(id => $(id)?.classList.remove('on'));
 
-  syncGcashSharedPanel(m);
-  $('gcashBox').classList.toggle('show',  m === 'gcash' || m === 'bdopay' || m === 'maya');
-  $('gotymeBox').classList.toggle('show', m === 'gotyme');
-  $('pnbBox').classList.toggle('show',    m === 'pnb');
+  if (!checkoutMode) syncGcashSharedPanel(m);
+  $('gcashBox').classList.toggle('show',  !checkoutMode && (m === 'gcash' || m === 'bdopay' || m === 'maya'));
+  $('gotymeBox').classList.toggle('show', !checkoutMode && m === 'gotyme');
+  $('pnbBox').classList.toggle('show',    !checkoutMode && m === 'pnb');
   const refWrap = $('gcashRefWrap');
-  if (refWrap) refWrap.style.display = digitalPay ? '' : 'none';
-  $('cashNote').style.display = m === 'cash' ? '' : 'none';
+  if (refWrap) refWrap.style.display = digitalPay && !checkoutMode ? '' : 'none';
+  $('cashNote').style.display = !checkoutMode && m === 'cash' ? '' : 'none';
   if ($('refMethodLabel')) $('refMethodLabel').textContent = digitalPay ? `— ${paymentMethodName(m)}` : '';
-  if (digitalPay) $('bGcashRef')?.setAttribute('required','');
+  if (digitalPay && !checkoutMode) $('bGcashRef')?.setAttribute('required','');
   else $('bGcashRef')?.removeAttribute('required');
   syncBookingRefUi(m);
   updatePaymentAmountUI();
@@ -6733,23 +6803,9 @@ async function submitBookingLegacy(e) {
   stopSlotCountdown();
 
   let bookingSaved = false;
-  let checkoutOpened = false;
   try {
-    if (_reservedRef) {
-      // Slot was already reserved at Book Now — just fill in the details.
-      await DB.updateBooking(_reservedRef, {
-        fullName:      booking.fullName,
-        contactNumber: booking.contactNumber,
-        email:         booking.email,
-        paymentMethod: booking.paymentMethod,
-        paymentFlow:   booking.paymentFlow,
-        gcashRef:      booking.gcashRef,
-        downpayment:   booking.downpayment,
-        total:         booking.total,
-        paymentStatus: booking.paymentStatus,
-        status:        booking.status,
-        createdAt:     booking.createdAt,
-      });
+    if (_reservedRef || await DB.getBookingByRef(booking.ref).catch(() => null)) {
+      await saveBookingRowFromHold(booking, new Set(reservedRefs()));
       _reservedRef = null;
       _reservationStartedAt = null;
     } else {
@@ -6762,7 +6818,7 @@ async function submitBookingLegacy(e) {
     DB.notifyBookingSubmitted(booking).catch(() => {});
 
     // ── Run OCR against the saved booking ────────────────────────────────
-    if (_receiptFile && digitalPay) {
+    if (_receiptFile && digitalPay && !gcashNeedsCheckout) {
       try { booking._receiptResult = await verifyUploadedReceipt(booking.ref, payMethod); } catch(_) {}
       const ocrStatus = booking._receiptResult?.status;
       if (ocrStatus === 'rejected') {
@@ -6810,18 +6866,14 @@ async function submitBookingLegacy(e) {
           });
         } catch(_) {}
 
-        if (checkoutUrl) {
-          window.open(checkoutUrl, '_blank', 'noopener,noreferrer');
-          checkoutOpened = true;
-        }
+        if (goToCheckout(checkoutUrl)) return;
         startPaymentWatch(booking.ref);
-        toast('Secure checkout opened. After payment, admin will confirm your booking.', 'ok');
       } catch (payErr) {
         try { await DB.deleteBooking(booking.ref); } catch(_) {}
         toast(`Secure checkout failed to initialize: ${extractErrMsg(payErr)}`, 'err');
       }
     }
-    if (gcashNeedsCheckout && !checkoutOpened) {
+    if (gcashNeedsCheckout) {
       // Do not proceed to confirmation UI if checkout could not be launched.
       if (submitBtn) {
         submitBtn.disabled = false;
@@ -6870,6 +6922,7 @@ async function submitBooking(e) {
   const gcashRef  = $('bGcashRef')?.value?.trim() || '';
   const hasPaymentMethod = ALL_PAYMENT_METHODS.some(m => paymentMethods[m]);
   const digitalPay = isDigitalPayMethod(payMethod);
+  const gcashNeedsCheckout = payMethod === 'gcash' && isPayMongoCheckoutAvailable();
   const repairItem = items.find(item => getCourtRepair(item.courtName, item.date));
 
   const checks = [
@@ -6886,11 +6939,11 @@ async function submitBooking(e) {
     [!payMethod, 'Please select a payment method.', 'payMethodBlock', 4],
     [!!payMethod && !paymentMethods[payMethod], 'Selected payment method is no longer available.', 'payMethodBlock', 4],
     [!$('bookingPolicyAgree')?.checked, 'Please agree to the booking and payment policy before confirming.', $('bookingPolicyAgree')?.closest('.booking-policy-check'), 5],
-    [digitalPay && !gcashRef, 'Please enter your payment reference number after paying.', 'bGcashRef', 5],
-    [payMethod === 'gcash' && !isGcashRefValid(gcashRef), 'GCash reference number must be exactly 13 digits.', 'bGcashRef', 5],
+    [digitalPay && !gcashNeedsCheckout && !gcashRef, 'Please enter your payment reference number after paying.', 'bGcashRef', 5],
+    [payMethod === 'gcash' && !gcashNeedsCheckout && !isGcashRefValid(gcashRef), 'GCash reference number must be exactly 13 digits.', 'bGcashRef', 5],
     [payMethod === 'bdopay' && !isBdoPayRefValid(gcashRef), 'BDO Pay reference must look like BN-YYYYMMDD-########. Do not enter the invoice number.', 'bGcashRef', 5],
     [payMethod === 'maya' && !isMayaRefValid(gcashRef), 'Maya Reference ID must look like B6DC F633 F08C. Do not enter the InstaPay Ref. No.', 'bGcashRef', 5],
-    [digitalPay && !_receiptFile, () => {
+    [digitalPay && !gcashNeedsCheckout && !_receiptFile, () => {
       const drop = $('bReceiptDrop');
       if (drop) markBookingInvalid(drop, 5);
       return 'Please upload your receipt screenshot before confirming.';
@@ -6913,8 +6966,8 @@ async function submitBooking(e) {
   const groupDownpayment = payFull ? groupTotal : groupTotal / 2;
   const sharedGroupRef = items.length > 1 ? (items[0].groupRef || genRef() + '-G') : null;
   const heldRefs = new Set(reservedRefs());
-  const status = digitalPay ? 'verifying' : 'pending';
-  const paymentStatus = payMethod === 'cash' ? 'unpaid' : 'for_verification';
+  const status = gcashNeedsCheckout ? 'pending' : (digitalPay ? 'verifying' : 'pending');
+  const paymentStatus = gcashNeedsCheckout ? 'pending' : (payMethod === 'cash' ? 'unpaid' : 'for_verification');
 
   const itemBookings = items.map(item => ({
     ref: item.ref || genRef(),
@@ -6958,30 +7011,14 @@ async function submitBooking(e) {
   let bookingSaved = false;
   try {
     for (const row of itemBookings) {
-      if (heldRefs.has(row.ref)) {
-        await DB.updateBooking(row.ref, {
-          fullName:      row.fullName,
-          contactNumber: row.contactNumber,
-          email:         row.email,
-          paymentMethod: row.paymentMethod,
-          paymentFlow:   row.paymentFlow,
-          gcashRef:      row.gcashRef,
-          downpayment:   row.downpayment,
-          total:         row.total,
-          paymentStatus: row.paymentStatus,
-          status:        row.status,
-          createdAt:     row.createdAt,
-        });
-      } else {
-        await DB.addBooking(row);
-      }
+      await saveBookingRowFromHold(row, heldRefs);
     }
     clearReservationState();
     bookingSaved = true;
 
     DB.notifyBookingSubmitted(booking).catch(() => {});
 
-    if (_receiptFile && digitalPay) {
+    if (_receiptFile && digitalPay && !gcashNeedsCheckout) {
       try { booking._receiptResult = await verifyUploadedReceipt(booking.ref, payMethod); } catch(_) {}
       const ocrStatus = booking._receiptResult?.status;
       if (ocrStatus === 'rejected') {
@@ -7013,6 +7050,28 @@ async function submitBooking(e) {
         DB.notifyBookingUpdate(booking, 'payment_review_needed', receiptReasonFromFlags(booking._receiptResult?.flags || []) || 'Receipt needs owner review.').catch(() => {});
         await refreshBookingItemViews(itemBookings);
       }
+    }
+
+    if (gcashNeedsCheckout) {
+      try {
+        const session = await createSecurePaymentSession(booking);
+        const checkoutUrl = session?.checkoutUrl || session?.checkout_url || '';
+        const sessionId = session?.sessionId || session?.session_id || null;
+        const provider = session?.provider || 'paymongo';
+
+        await Promise.allSettled(itemBookings.map(row => DB.updateBooking(row.ref, {
+          paymentProvider: provider,
+          paymentSessionId: sessionId,
+          paymentCheckoutUrl: checkoutUrl,
+        })));
+
+        if (goToCheckout(checkoutUrl)) return;
+        startPaymentWatch(booking.ref);
+      } catch (payErr) {
+        await Promise.allSettled(itemBookings.map(row => DB.deleteBooking(row.ref)));
+        toast(`QRPh checkout failed to initialize: ${extractErrMsg(payErr)}`, 'err');
+      }
+      return;
     }
 
     showInvoice(booking);
@@ -7419,6 +7478,7 @@ function animateStat(el, final) {
    ============================================= */
 function dismissSplash() {
   const sp = document.getElementById('splashScreen');
+  if (!sp || sp.classList.contains('dismissed')) return;
   sp.classList.add('dismissed');
   document.body.style.overflow = '';
   sp.addEventListener('transitionend', () => { sp.style.display = 'none'; }, { once: true });
@@ -7426,12 +7486,59 @@ function dismissSplash() {
 // Lock scroll while splash is showing
 document.body.style.overflow = 'hidden';
 
+async function handlePaymentReturn() {
+  const params = new URLSearchParams(location.search);
+  const payment = (params.get('payment') || '').toLowerCase();
+  const bookingRef = params.get('bookingRef') || params.get('booking_ref') || '';
+  if (!payment || !bookingRef) return false;
+
+  dismissSplash();
+  if (payment === 'cancelled') {
+    toast('QRPh checkout was cancelled. Your booking is still pending payment.', 'err');
+  } else {
+    toast('Checking QRPh payment...', 'ok');
+  }
+
+  let booking = null;
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    if (payment === 'success' && typeof DB.syncPaymentSession === 'function') {
+      await DB.syncPaymentSession({ bookingRef }, { allowFailure: true }).catch(() => null);
+    }
+
+    booking = await DB.getBookingByRef(bookingRef).catch(() => null);
+    if (booking) {
+      const paid = booking.paymentStatus === 'paid' || booking.payment_status === 'paid';
+      if (payment === 'cancelled' || paid || booking.status === 'confirmed') break;
+    }
+
+    await new Promise(resolve => setTimeout(resolve, 1500));
+  }
+
+  if (booking) {
+    if (payment === 'success') {
+      booking.paymentStatus = 'paid';
+      booking.status = 'confirmed';
+      booking.paidAt = booking.paidAt || new Date().toISOString();
+    }
+    showInvoice(booking);
+    await renderCourts();
+    if (booking.courtId && booking.date) await onCardDate(booking.courtId, booking.date).catch(() => {});
+    if (payment === 'success') toast('QRPh payment received. Booking confirmed.', 'ok');
+  } else {
+    toast('Payment return received, but booking could not be loaded. Please contact the court with your PayMongo reference.', 'err');
+  }
+
+  history.replaceState({}, document.title, location.pathname || '/');
+  return true;
+}
+
 document.addEventListener('DOMContentLoaded', async () => {
   initDark();
   await DB.seedDefaultData();
   await loadOperatingHours();
   await expireStaleVerifyingBookings();
   await renderCourts();
+  await handlePaymentReturn();
   initGuestResumePersistence();
   await maybeResumeGuestBooking();
   await maybeOpenHostSessionLink();
@@ -8108,7 +8215,7 @@ async function submitOpenPlay() {
 }
 </script>
 <script src="supabase.min.js"></script>
-<script src="supabase-config.js?v=20260627-rolefix"></script>
+<script src="supabase-config.js?v=20260703-prod-remote"></script>
 
 <!-- MOBILE STICKY BOOK NOW BAR -->
 <div id="mobileBookBar" class="mobile-book-bar" style="display:none">

@@ -2,10 +2,12 @@ import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-payment-signature",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, paymongo-signature, x-payment-signature",
 };
 
 type WebhookBody = {
+  type?: string;
+  event_type?: string;
   session_id?: string;
   booking_ref?: string;
   provider_reference?: string;
@@ -15,6 +17,11 @@ type WebhookBody = {
   data?: {
     id?: string;
     type?: string;
+    data?: {
+      id?: string;
+      type?: string;
+      attributes?: Record<string, unknown>;
+    };
     attributes?: {
       type?: string;
       data?: {
@@ -41,8 +48,31 @@ function normalizeStatus(input?: string) {
 async function verifySignature(req: Request, bodyText: string) {
   const secret = Deno.env.get("PAYMENT_WEBHOOK_SECRET");
   if (!secret) return true;
+
+  const paymongoSig = req.headers.get("paymongo-signature") || req.headers.get("Paymongo-Signature") || "";
+  if (paymongoSig) {
+    const parts = Object.fromEntries(
+      paymongoSig.split(",")
+        .map((part) => part.trim().split("="))
+        .filter((part) => part.length === 2)
+        .map(([key, value]) => [key, value]),
+    );
+    const timestamp = parts.t || "";
+    const candidates = [parts.te, parts.li].filter((value): value is string => !!value);
+    if (!timestamp || candidates.length === 0) return false;
+
+    const signedPayload = `${timestamp}.${bodyText}`;
+    const expected = await hmacSha256Hex(secret, signedPayload);
+    return candidates.some((candidate) => constantTimeEqual(candidate, expected));
+  }
+
   const given = req.headers.get("x-payment-signature") || "";
   if (!given) return false;
+  const expected = await hmacSha256Hex(secret, bodyText);
+  return constantTimeEqual(given, expected);
+}
+
+async function hmacSha256Hex(secret: string, payload: string) {
   const key = await crypto.subtle.importKey(
     "raw",
     new TextEncoder().encode(secret),
@@ -50,9 +80,17 @@ async function verifySignature(req: Request, bodyText: string) {
     false,
     ["sign"],
   );
-  const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(bodyText));
-  const expected = Array.from(new Uint8Array(sig)).map((b) => b.toString(16).padStart(2, "0")).join("");
-  return expected === given;
+  const sig = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(payload));
+  return Array.from(new Uint8Array(sig)).map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+function constantTimeEqual(a: string, b: string) {
+  const left = new TextEncoder().encode(a);
+  const right = new TextEncoder().encode(b);
+  if (left.length !== right.length) return false;
+  let out = 0;
+  for (let i = 0; i < left.length; i += 1) out |= left[i] ^ right[i];
+  return out === 0;
 }
 
 function parseWebhook(body: WebhookBody) {
@@ -64,17 +102,26 @@ function parseWebhook(body: WebhookBody) {
   let paidAtIso = body.paid_at || new Date().toISOString();
 
   // PayMongo event payload support
-  const evType = body?.data?.attributes?.type || "";
-  const evData = body?.data?.attributes?.data;
+  const evType =
+    body?.data?.attributes?.type ||
+    body?.data?.type ||
+    body?.type ||
+    "";
+  const evData = body?.data?.attributes?.data || body?.data?.data;
   if (evData) {
     providerRef = evData.id || providerRef;
-    const evStatus = evData.attributes?.status || "";
-    const evRef = evData.attributes?.reference_number || "";
-    const evMeta = evData.attributes?.metadata || {};
+    const attrs = (evData.attributes || {}) as Record<string, unknown>;
+    const payments = Array.isArray(attrs.payments) ? attrs.payments : [];
+    const latestPayment = payments[0] as { attributes?: Record<string, unknown> } | undefined;
+    const paymentAttrs = latestPayment?.attributes || {};
+    const evStatus = String(attrs.status || paymentAttrs.status || "");
+    const evRef = String(attrs.reference_number || "");
+    const evMeta = (attrs.metadata || {}) as Record<string, unknown>;
     const metaRef = typeof evMeta.booking_ref === "string" ? evMeta.booking_ref : "";
     if (!bookingRef) bookingRef = evRef || metaRef || null;
     if (evStatus) normalized = normalizeStatus(evStatus);
-    if (evData.attributes?.paid_at) paidAtIso = evData.attributes.paid_at;
+    const paidAt = attrs.paid_at || paymentAttrs.paid_at || attrs.updated_at;
+    if (typeof paidAt === "string" && paidAt) paidAtIso = paidAt;
     if (evType.toLowerCase().includes("paid")) normalized = "paid";
     if (evType.toLowerCase().includes("failed") || evType.toLowerCase().includes("expired")) normalized = "failed";
     if (!sessionId) sessionId = evData.id || null;
@@ -157,6 +204,7 @@ Deno.serve(async (req) => {
         payment_status: normalized,
       };
       if (normalized === "paid") {
+        bookingUpdate.status = "confirmed";
         bookingUpdate.paid_at = paidAtIso;
       }
       if (normalized === "failed") bookingUpdate.status = "cancelled";

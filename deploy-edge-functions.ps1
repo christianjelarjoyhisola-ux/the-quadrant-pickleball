@@ -55,6 +55,7 @@ if ($secretArgs.Count -gt 0) {
 
 npx supabase functions deploy create-payment-session --no-verify-jwt
 npx supabase functions deploy payment-webhook --no-verify-jwt
+npx supabase functions deploy sync-payment-session --no-verify-jwt
 npx supabase functions deploy verify-gcash-receipt --no-verify-jwt
 npx supabase functions deploy manage-account --no-verify-jwt
 npx supabase functions deploy send-confirmation-email --no-verify-jwt

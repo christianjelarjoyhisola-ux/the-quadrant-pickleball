@@ -23,4 +23,5 @@ Thumbs.db
 .cf-pages-deploy/
 .wrangler/
 .wrangler-login*.txt
+.tmp-*
 test-results/

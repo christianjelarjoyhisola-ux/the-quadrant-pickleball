@@ -169,7 +169,7 @@ async function createPayMongoCheckoutSession(input: {
         send_email_receipt: false,
         show_description: true,
         show_line_items: true,
-        payment_method_types: ["qrph", "paymaya"],
+        payment_method_types: ["qrph"],
         line_items: [
           {
             currency: "PHP",
@@ -193,7 +193,7 @@ async function createPayMongoCheckoutSession(input: {
     },
   };
 
-  const res = await fetch("https://api.paymongo.com/v1/checkout_sessions", {
+  const res = await fetch("https://api.paymongo.com/v2/checkout_sessions", {
     method: "POST",
     headers: {
       Authorization: `Basic ${auth}`,
@@ -210,6 +210,14 @@ async function createPayMongoCheckoutSession(input: {
   if (!sessionId || !checkoutUrl) throw new Error("PayMongo response missing session id or checkout_url");
 
   return { sessionId, checkoutUrl };
+}
+
+function withReturnParams(rawUrl: string, params: Record<string, string>) {
+  const url = new URL(rawUrl);
+  for (const [key, value] of Object.entries(params)) {
+    if (value) url.searchParams.set(key, value);
+  }
+  return url.toString();
 }
 
 Deno.serve(async (req) => {
@@ -259,14 +267,6 @@ Deno.serve(async (req) => {
     const bookingGroup = await loadBookingGroup(db, booking as BookingRow);
     const amounts = await expectedBookingGroupAmounts(db, bookingGroup, settings);
 
-    const requestedAmount = Number(body.amountPhp);
-    if (Number.isFinite(requestedAmount) && !closeMoney(requestedAmount, amounts.due)) {
-      return new Response(JSON.stringify({ error: "Payment amount does not match booking price" }), {
-        status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
     const sessionId = crypto.randomUUID();
     const amountPhp = amounts.due;
     const customer = {
@@ -292,13 +292,18 @@ Deno.serve(async (req) => {
     if (!secretKey) throw new Error("PAYMONGO_SECRET_KEY is missing");
     if (!successUrl || !cancelUrl) throw new Error("PAYMENT_SUCCESS_URL or PAYMENT_CANCEL_URL is missing");
 
+    const returnParams = {
+      bookingRef,
+      ...(booking.booking_group_ref ? { groupRef: booking.booking_group_ref } : {}),
+    };
+
     const out = await createPayMongoCheckoutSession({
       secretKey,
       amountPhp,
       bookingRef,
       customer,
-      successUrl,
-      cancelUrl,
+      successUrl: withReturnParams(successUrl, { ...returnParams, payment: "success" }),
+      cancelUrl: withReturnParams(cancelUrl, { ...returnParams, payment: "cancelled" }),
       metadata,
     });
     providerSessionId = out.sessionId;

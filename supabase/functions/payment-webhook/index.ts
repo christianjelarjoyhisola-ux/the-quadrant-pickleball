@@ -117,8 +117,14 @@ function parseWebhook(body: WebhookBody) {
     const evStatus = String(attrs.status || paymentAttrs.status || "");
     const evRef = String(attrs.reference_number || "");
     const evMeta = (attrs.metadata || {}) as Record<string, unknown>;
+    const intentRef =
+      typeof attrs.payment_intent_id === "string" ? attrs.payment_intent_id :
+      typeof attrs.payment_intent === "string" ? attrs.payment_intent :
+      typeof attrs.payment_intent_id === "object" && attrs.payment_intent_id ? String(attrs.payment_intent_id) :
+      "";
     const metaRef = typeof evMeta.booking_ref === "string" ? evMeta.booking_ref : "";
     if (!bookingRef) bookingRef = evRef || metaRef || null;
+    if (intentRef) providerRef = intentRef;
     if (evStatus) normalized = normalizeStatus(evStatus);
     const paidAt = attrs.paid_at || paymentAttrs.paid_at || attrs.updated_at;
     if (typeof paidAt === "string" && paidAt) paidAtIso = paidAt;

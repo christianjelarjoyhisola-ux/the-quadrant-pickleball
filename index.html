@@ -110,6 +110,64 @@ body.dark .nav { background:rgba(9,21,33,.94); }
 .btn-full { width:100%; justify-content:center; }
 .btn-lg { padding:14px 28px; font-size:1rem; }
 
+/* BRANDED QRPH PAYMENT */
+.qrph-pay-overlay {
+  position:fixed; inset:0; z-index:950;
+  display:none; align-items:center; justify-content:center;
+  padding:18px; background:rgba(0,0,0,.72); backdrop-filter:blur(10px);
+}
+.qrph-pay-overlay.show { display:flex; }
+.qrph-pay-card {
+  width:min(440px,100%); max-height:min(92vh,760px); overflow:auto;
+  background:linear-gradient(180deg,#111820 0%,#071018 100%);
+  color:#f8f3e4; border:1px solid rgba(214,168,69,.42);
+  border-radius:18px; box-shadow:0 24px 70px rgba(0,0,0,.5);
+}
+.qrph-pay-head {
+  padding:18px 20px; display:flex; align-items:center; justify-content:space-between; gap:14px;
+  border-bottom:1px solid rgba(214,168,69,.24);
+}
+.qrph-pay-brand { display:flex; align-items:center; gap:10px; min-width:0; }
+.qrph-pay-logo { width:44px; height:44px; border-radius:50%; object-fit:cover; border:1px solid rgba(214,168,69,.52); background:#050607; }
+.qrph-pay-title { font-family:'Bebas Neue',sans-serif; letter-spacing:2px; font-size:1.35rem; line-height:1; }
+.qrph-pay-sub { color:#c7b889; font-size:.72rem; font-weight:800; letter-spacing:1.4px; text-transform:uppercase; margin-top:3px; }
+.qrph-pay-close {
+  width:34px; height:34px; border-radius:50%; border:1px solid rgba(214,168,69,.28);
+  background:rgba(255,255,255,.06); color:#f8f3e4; font-size:1.1rem; cursor:pointer;
+}
+.qrph-pay-body { padding:18px 20px 20px; }
+.qrph-pay-ref { font-size:.78rem; color:#c7b889; text-transform:uppercase; letter-spacing:1px; font-weight:900; }
+.qrph-pay-ref strong { display:block; margin-top:4px; color:#fff; font-size:1.1rem; letter-spacing:1.5px; }
+.qrph-pay-amount {
+  margin:14px 0; padding:14px; border-radius:14px;
+  background:rgba(214,168,69,.12); border:1px solid rgba(214,168,69,.28);
+  display:flex; align-items:flex-end; justify-content:space-between; gap:12px;
+}
+.qrph-pay-amount span { color:#c7b889; font-size:.72rem; font-weight:900; text-transform:uppercase; letter-spacing:1px; }
+.qrph-pay-amount strong { color:var(--brand-gold-light); font-size:2.1rem; line-height:1; }
+.qrph-pay-qrbox {
+  background:#fff; border-radius:16px; padding:14px; display:flex; align-items:center; justify-content:center;
+  border:3px solid var(--brand-gold); box-shadow:0 12px 32px rgba(0,0,0,.24);
+}
+.qrph-pay-qrbox img { width:min(280px,78vw); height:min(280px,78vw); object-fit:contain; display:block; }
+.qrph-pay-meta { margin-top:14px; display:grid; gap:8px; }
+.qrph-pay-row { display:flex; align-items:center; justify-content:space-between; gap:12px; color:#d8decd; font-size:.86rem; }
+.qrph-pay-row strong { color:#fff; text-align:right; }
+.qrph-pay-note {
+  margin-top:14px; padding:11px 12px; border-radius:12px;
+  background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.1);
+  color:#d8decd; font-size:.82rem; line-height:1.35;
+}
+.qrph-pay-actions { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:16px; }
+.qrph-pay-status {
+  margin-top:12px; color:#c7b889; font-size:.82rem; font-weight:800; text-align:center;
+}
+@media(max-width:480px) {
+  .qrph-pay-overlay { padding:0; align-items:flex-end; }
+  .qrph-pay-card { width:100%; max-height:94vh; border-radius:18px 18px 0 0; }
+  .qrph-pay-actions { grid-template-columns:1fr; }
+}
+
 /* HERO */
 .hero { position:relative; overflow:hidden; padding:60px 24px 56px; text-align:center; }
 .h-glow {
@@ -3393,6 +3451,44 @@ body.light #splashScreen { background: #071320; }
   </div>
 </div>
 
+<!-- BRANDED QRPH PAYMENT MODAL -->
+<div class="qrph-pay-overlay" id="qrphPayOverlay" aria-hidden="true">
+  <div class="qrph-pay-card" role="dialog" aria-modal="true" aria-labelledby="qrphPayTitle">
+    <div class="qrph-pay-head">
+      <div class="qrph-pay-brand">
+        <img class="qrph-pay-logo" src="the-quadrant-logo.jpg" alt="The Quadrant" />
+        <div>
+          <div class="qrph-pay-title" id="qrphPayTitle">QRPh Payment</div>
+          <div class="qrph-pay-sub">The Quadrant Booking</div>
+        </div>
+      </div>
+      <button class="qrph-pay-close" type="button" onclick="closeQrphPaymentModal(true)" aria-label="Close">&times;</button>
+    </div>
+    <div class="qrph-pay-body">
+      <div class="qrph-pay-ref">Booking Reference <strong id="qrphPayRef">TQ-</strong></div>
+      <div class="qrph-pay-amount">
+        <span>Amount to pay</span>
+        <strong id="qrphPayAmount">₱0.00</strong>
+      </div>
+      <div class="qrph-pay-qrbox">
+        <img id="qrphPayImg" alt="QRPh payment code" />
+      </div>
+      <div class="qrph-pay-meta">
+        <div class="qrph-pay-row"><span>Court / Slot</span><strong id="qrphPaySlot">-</strong></div>
+        <div class="qrph-pay-row"><span>Expires in</span><strong id="qrphPayCountdown">30:00</strong></div>
+      </div>
+      <div class="qrph-pay-note">
+        Scan this QR with GCash, Maya, or any QRPh-supported bank app. The booking will confirm automatically after PayMongo verifies the payment.
+      </div>
+      <div class="qrph-pay-actions">
+        <button class="btn btn-g btn-full" type="button" onclick="closeQrphPaymentModal(true)">Pay later</button>
+        <button class="btn btn-p btn-full" type="button" id="qrphCheckBtn" onclick="checkQrphPaymentNow()">Check Payment</button>
+      </div>
+      <div class="qrph-pay-status" id="qrphPayStatus">Waiting for payment...</div>
+    </div>
+  </div>
+</div>
+
 <!-- QR ZOOM MODAL -->
 <div class="qr-zoom-overlay" id="qrZoomOverlay" onclick="qrZoomBackdrop(event)">
   <div class="qr-zoom-card">
@@ -4271,6 +4367,7 @@ let paymentReceiverSettings = {
 let paymentMethods = { cash: true, gcash: true, bdopay: true, maya: true, gotyme: true, pnb: true };
 const DIGITAL_PAYMENT_METHODS = ['gcash', 'bdopay', 'maya', 'gotyme', 'pnb'];
 const ALL_PAYMENT_METHODS = [...DIGITAL_PAYMENT_METHODS, 'cash'];
+let qrphPaymentState = { booking: null, items: [], session: null, timer: null, countdownTimer: null, expiresAt: 0, checking: false };
 
 function isDigitalPayMethod(method) {
   return DIGITAL_PAYMENT_METHODS.includes(String(method || '').toLowerCase());
@@ -4700,7 +4797,7 @@ function applyPaymentMethodVisibility() {
     const sub = gcashOpt.querySelector('.pay-sub');
     if (icon) icon.textContent = checkoutMode ? 'QR' : '📲';
     if (label) label.textContent = checkoutMode ? 'QRPh' : 'GCash';
-    if (sub) sub.textContent = checkoutMode ? 'Secure PayMongo checkout' : 'Scan QR · enter ref #';
+    if (sub) sub.textContent = checkoutMode ? 'Secure QRPh auto-confirmation' : 'Scan QR · enter ref #';
   }
 
   if ($('payMethodBlock')) $('payMethodBlock').style.display = hasAny ? '' : 'none';
@@ -4768,7 +4865,7 @@ function updatePaymentWindowText() {
 }
 
 function paymentInstructionText() {
-  if (isPayMongoCheckoutAvailable()) return 'Pay securely through QRPh checkout.';
+  if (isPayMongoCheckoutAvailable()) return 'Scan the secure QRPh code and payment will confirm automatically.';
 
   const digital = DIGITAL_PAYMENT_METHODS.filter(m => paymentMethods[m]).map(paymentMethodName);
 
@@ -4805,6 +4902,123 @@ function goToCheckout(checkoutUrl) {
   if (!checkoutUrl) return false;
   toast('Opening secure QRPh checkout...', 'ok');
   window.location.assign(checkoutUrl);
+  return true;
+}
+
+function qrphSessionImage(session) {
+  return session?.qrImageUrl || session?.qr_image_url || session?.qrCodeUrl || session?.qr_code_url || '';
+}
+
+function qrphSessionAmount(session, booking) {
+  return Number(session?.amountPhp ?? session?.amount_php ?? booking?.downpayment ?? booking?.total ?? 0);
+}
+
+function qrphSlotSummary(booking) {
+  const date = booking?.date ? fmtDc(booking.date) : '';
+  const slot = booking?.timeLabel || `${booking?.startTime || ''} - ${booking?.endTime || ''}`.trim();
+  return [booking?.courtName, date, slot].filter(Boolean).join(' | ') || 'The Quadrant';
+}
+
+function setQrphPaymentStatus(message, tone = 'waiting') {
+  const el = $('qrphPayStatus');
+  if (!el) return;
+  el.textContent = message;
+  el.style.color = tone === 'ok' ? '#86efac' : tone === 'err' ? '#ff8a8f' : '#c7b889';
+}
+
+function updateQrphCountdown() {
+  const el = $('qrphPayCountdown');
+  if (!el || !qrphPaymentState.expiresAt) return;
+  const remaining = Math.max(0, qrphPaymentState.expiresAt - Date.now());
+  const mins = Math.floor(remaining / 60000);
+  const secs = Math.floor((remaining % 60000) / 1000);
+  el.textContent = `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  if (remaining <= 0) {
+    setQrphPaymentStatus('QR expired. Please create a new booking payment.', 'err');
+    clearInterval(qrphPaymentState.countdownTimer);
+    qrphPaymentState.countdownTimer = null;
+  }
+}
+
+function closeQrphPaymentModal(showPendingInvoice = true) {
+  const overlay = $('qrphPayOverlay');
+  if (overlay) {
+    overlay.classList.remove('show');
+    overlay.setAttribute('aria-hidden', 'true');
+  }
+  if (qrphPaymentState.timer) clearInterval(qrphPaymentState.timer);
+  if (qrphPaymentState.countdownTimer) clearInterval(qrphPaymentState.countdownTimer);
+  const booking = qrphPaymentState.booking;
+  qrphPaymentState.timer = null;
+  qrphPaymentState.countdownTimer = null;
+  if (showPendingInvoice && booking) {
+    showInvoice(booking);
+    resetForm();
+    toast('Booking is pending QRPh payment.', 'inf');
+  }
+}
+
+async function completeQrphPaidBooking(booking) {
+  closeQrphPaymentModal(false);
+  const fresh = await DB.getBookingByRef(booking.ref).catch(() => null);
+  const paidBooking = { ...(fresh || booking), paymentStatus: 'paid', status: 'confirmed', paidAt: (fresh || booking)?.paidAt || new Date().toISOString() };
+  showInvoice(paidBooking);
+  resetForm();
+  toast('QRPh payment received. Booking confirmed.', 'ok');
+  await renderCourts();
+  const items = qrphPaymentState.items?.length ? qrphPaymentState.items : [paidBooking];
+  await refreshBookingItemViews(items).catch(() => {});
+}
+
+async function checkQrphPaymentNow() {
+  const booking = qrphPaymentState.booking;
+  if (!booking || qrphPaymentState.checking) return;
+  qrphPaymentState.checking = true;
+  const btn = $('qrphCheckBtn');
+  const oldText = btn?.textContent;
+  if (btn) { btn.disabled = true; btn.textContent = 'Checking...'; }
+  try {
+    setQrphPaymentStatus('Checking PayMongo...', 'waiting');
+    const sync = await DB.syncPaymentSession({ bookingRef: booking.ref }, { allowFailure: true }).catch(() => null);
+    const fresh = await DB.getBookingByRef(booking.ref).catch(() => null);
+    const paid = sync?.paid || sync?.status === 'paid' || fresh?.paymentStatus === 'paid' || fresh?.payment_status === 'paid' || fresh?.status === 'confirmed';
+    if (paid) {
+      await completeQrphPaidBooking(fresh || booking);
+      return;
+    }
+    setQrphPaymentStatus('Waiting for payment...', 'waiting');
+  } catch (err) {
+    setQrphPaymentStatus(`Could not check payment: ${extractErrMsg(err)}`, 'err');
+  } finally {
+    qrphPaymentState.checking = false;
+    if (btn) { btn.disabled = false; btn.textContent = oldText || 'Check Payment'; }
+  }
+}
+
+function showQrphPaymentModal(booking, session, itemBookings = []) {
+  const qrImage = qrphSessionImage(session);
+  if (!qrImage) return false;
+
+  const expires = session?.expiresAt || session?.expires_at || '';
+  const expiresAt = expires ? new Date(expires).getTime() : Date.now() + 30 * 60 * 1000;
+  qrphPaymentState = { booking, items: itemBookings, session, timer: null, countdownTimer: null, expiresAt, checking: false };
+
+  if ($('qrphPayRef')) $('qrphPayRef').textContent = booking.ref;
+  if ($('qrphPayAmount')) $('qrphPayAmount').textContent = fmt(qrphSessionAmount(session, booking));
+  if ($('qrphPaySlot')) $('qrphPaySlot').textContent = qrphSlotSummary(booking);
+  if ($('qrphPayImg')) $('qrphPayImg').src = qrImage;
+  setQrphPaymentStatus('Waiting for payment...', 'waiting');
+  updateQrphCountdown();
+
+  const overlay = $('qrphPayOverlay');
+  if (overlay) {
+    overlay.classList.add('show');
+    overlay.setAttribute('aria-hidden', 'false');
+  }
+
+  qrphPaymentState.countdownTimer = setInterval(updateQrphCountdown, 1000);
+  qrphPaymentState.timer = setInterval(() => checkQrphPaymentNow(), 5000);
+  toast('QRPh is ready. Scan the code to pay.', 'ok');
   return true;
 }
 
@@ -5801,7 +6015,7 @@ function wizGoTo(n) {
     }
   }
   $('wizBackBtn').textContent = n <= wizStartStep ? '✕ Cancel' : '← Back';
-  $('wizNextBtn').textContent = n === 5 ? (isPayMongoCheckoutAvailable() ? 'Open QRPh Checkout' : 'Confirm Booking') : 'Next ->';
+  $('wizNextBtn').textContent = n === 5 ? (isPayMongoCheckoutAvailable() ? 'Show QRPh Code' : 'Confirm Booking') : 'Next ->';
   if (n === 2) { renderSlots(); }
   if (n === 3) { updateWiz3Summary(); }
   if (n === 4) {
@@ -6490,7 +6704,7 @@ function pickPay(m) {
   if (methodNote) {
     const notes = {
       gcash: checkoutMode
-        ? 'QRPh checkout will open securely through PayMongo after you confirm the booking.'
+        ? 'Your secure QRPh code will appear here after you confirm the booking.'
         : [
           'GCash to GCash only.',
           'BDO Pay/InstaPay receipts will be rejected.',
@@ -6888,6 +7102,7 @@ async function submitBookingLegacy(e) {
           });
         } catch(_) {}
 
+        if (showQrphPaymentModal(booking, session, [booking])) return;
         if (goToCheckout(checkoutUrl)) return;
         startPaymentWatch(booking.ref);
       } catch (payErr) {
@@ -7087,6 +7302,7 @@ async function submitBooking(e) {
           paymentCheckoutUrl: checkoutUrl,
         })));
 
+        if (showQrphPaymentModal(booking, session, itemBookings)) return;
         if (goToCheckout(checkoutUrl)) return;
         startPaymentWatch(booking.ref);
       } catch (payErr) {

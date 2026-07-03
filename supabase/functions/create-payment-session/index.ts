@@ -151,6 +151,135 @@ async function expectedBookingGroupAmounts(
   return { total: roundMoney(total), due: roundMoney(due) };
 }
 
+function findStringByKey(obj: unknown, keys: string[]): string | null {
+  if (!obj || typeof obj !== "object") return null;
+  const record = obj as Record<string, unknown>;
+  for (const key of keys) {
+    const value = record[key];
+    if (typeof value === "string" && value.trim()) return value;
+  }
+  for (const value of Object.values(record)) {
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        const found = findStringByKey(item, keys);
+        if (found) return found;
+      }
+    } else if (value && typeof value === "object") {
+      const found = findStringByKey(value, keys);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+function findQrImageUrl(obj: unknown): string | null {
+  const fromKnownPath = (obj as any)?.data?.attributes?.next_action?.code?.image_url;
+  if (typeof fromKnownPath === "string" && fromKnownPath.trim()) return fromKnownPath;
+  const found = findStringByKey(obj, ["image_url", "qr_image_url", "qr_code_url"]);
+  return found && /^(https?:|data:image)/i.test(found) ? found : null;
+}
+
+function findExpiresAt(obj: unknown): string | null {
+  return findStringByKey(obj, ["expires_at", "expiresAt", "expires"]);
+}
+
+async function paymongoRequest(secretKey: string, path: string, init: RequestInit = {}) {
+  const auth = btoa(`${secretKey}:`);
+  const res = await fetch(`https://api.paymongo.com${path}`, {
+    ...init,
+    headers: {
+      Authorization: `Basic ${auth}`,
+      "Content-Type": "application/json",
+      ...(init.headers || {}),
+    },
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(`PayMongo error ${res.status}: ${extractErrMsg(json)}`);
+  return json;
+}
+
+async function createPayMongoQrphSession(input: {
+  secretKey: string;
+  amountPhp: number;
+  bookingRef: string;
+  customer: { name: string; email: string; phone: string };
+  returnUrl: string;
+  metadata: Record<string, string>;
+}) {
+  const amountCents = Math.round(input.amountPhp * 100);
+
+  const intentBody = {
+    data: {
+      attributes: {
+        amount: amountCents,
+        currency: "PHP",
+        payment_method_allowed: ["qrph"],
+        payment_method_options: {
+          qrph: {
+            expires_after: 1800,
+          },
+        },
+        capture_type: "automatic",
+        description: `Downpayment for ${input.bookingRef}`,
+        statement_descriptor: "THE QUADRANT",
+        metadata: input.metadata,
+      },
+    },
+  };
+
+  const intentJson = await paymongoRequest(input.secretKey, "/v1/payment_intents", {
+    method: "POST",
+    body: JSON.stringify(intentBody),
+  });
+  const paymentIntentId = intentJson?.data?.id || null;
+  const clientKey = intentJson?.data?.attributes?.client_key || null;
+  if (!paymentIntentId || !clientKey) throw new Error("PayMongo response missing Payment Intent id/client_key");
+
+  const methodJson = await paymongoRequest(input.secretKey, "/v1/payment_methods", {
+    method: "POST",
+    body: JSON.stringify({
+      data: {
+        attributes: {
+          type: "qrph",
+          billing: {
+            name: input.customer.name,
+            email: input.customer.email,
+            phone: input.customer.phone,
+          },
+        },
+      },
+    }),
+  });
+  const paymentMethodId = methodJson?.data?.id || null;
+  if (!paymentMethodId) throw new Error("PayMongo response missing Payment Method id");
+
+  const attachJson = await paymongoRequest(input.secretKey, `/v1/payment_intents/${encodeURIComponent(paymentIntentId)}/attach`, {
+    method: "POST",
+    body: JSON.stringify({
+      data: {
+        attributes: {
+          payment_method: paymentMethodId,
+          client_key: clientKey,
+          return_url: input.returnUrl,
+        },
+      },
+    }),
+  });
+
+  const qrImageUrl = findQrImageUrl(attachJson);
+  if (!qrImageUrl) throw new Error("PayMongo response missing QRPh image_url");
+
+  return {
+    sessionId: paymentIntentId,
+    paymentIntentId,
+    paymentMethodId,
+    clientKey,
+    qrImageUrl,
+    expiresAt: findExpiresAt(attachJson),
+    raw: { paymentIntent: intentJson, paymentMethod: methodJson, attach: attachJson },
+  };
+}
+
 async function createPayMongoCheckoutSession(input: {
   secretKey: string;
   amountPhp: number;
@@ -161,7 +290,6 @@ async function createPayMongoCheckoutSession(input: {
   metadata: Record<string, string>;
 }) {
   const amountCents = Math.round(input.amountPhp * 100);
-  const auth = btoa(`${input.secretKey}:`);
 
   const body = {
     data: {
@@ -193,17 +321,10 @@ async function createPayMongoCheckoutSession(input: {
     },
   };
 
-  const res = await fetch("https://api.paymongo.com/v2/checkout_sessions", {
+  const json = await paymongoRequest(input.secretKey, "/v2/checkout_sessions", {
     method: "POST",
-    headers: {
-      Authorization: `Basic ${auth}`,
-      "Content-Type": "application/json",
-    },
     body: JSON.stringify(body),
   });
-
-  const json = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(`PayMongo error ${res.status}: ${extractErrMsg(json)}`);
 
   const sessionId = json?.data?.id || null;
   const checkoutUrl = json?.data?.attributes?.checkout_url || null;
@@ -281,8 +402,11 @@ Deno.serve(async (req) => {
     };
 
     let checkoutUrl = "";
+    let qrImageUrl = "";
+    let expiresAt: string | null = null;
     let providerSessionId = sessionId;
     let providerName = provider;
+    let paymongoRaw: unknown = null;
 
     if (provider !== "paymongo") throw new Error("Only PAYMENT_PROVIDER=paymongo is supported");
 
@@ -297,18 +421,35 @@ Deno.serve(async (req) => {
       ...(booking.booking_group_ref ? { groupRef: booking.booking_group_ref } : {}),
     };
 
-    const out = await createPayMongoCheckoutSession({
-      secretKey,
-      amountPhp,
-      bookingRef,
-      customer,
-      successUrl: withReturnParams(successUrl, { ...returnParams, payment: "success" }),
-      cancelUrl: withReturnParams(cancelUrl, { ...returnParams, payment: "cancelled" }),
-      metadata,
-    });
-    providerSessionId = out.sessionId;
-    checkoutUrl = out.checkoutUrl;
-    providerName = "paymongo";
+    try {
+      const out = await createPayMongoQrphSession({
+        secretKey,
+        amountPhp,
+        bookingRef,
+        customer,
+        returnUrl: withReturnParams(successUrl, { ...returnParams, payment: "success" }),
+        metadata,
+      });
+      providerSessionId = out.paymentIntentId;
+      qrImageUrl = out.qrImageUrl;
+      expiresAt = out.expiresAt;
+      providerName = "paymongo_qrph";
+      paymongoRaw = out.raw;
+    } catch (qrErr) {
+      const out = await createPayMongoCheckoutSession({
+        secretKey,
+        amountPhp,
+        bookingRef,
+        customer,
+        successUrl: withReturnParams(successUrl, { ...returnParams, payment: "success" }),
+        cancelUrl: withReturnParams(cancelUrl, { ...returnParams, payment: "cancelled" }),
+        metadata,
+      });
+      providerSessionId = out.sessionId;
+      checkoutUrl = out.checkoutUrl;
+      providerName = "paymongo";
+      paymongoRaw = { qrph_error: extractErrMsg(qrErr) };
+    }
 
     const nowIso = new Date().toISOString();
     const paymentRow = {
@@ -319,7 +460,7 @@ Deno.serve(async (req) => {
       amount_php: amountPhp,
       status: "pending",
       checkout_url: checkoutUrl,
-      raw_request: body,
+      raw_request: { request: body, paymongo: paymongoRaw },
       created_at: nowIso,
       updated_at: nowIso,
     };
@@ -344,6 +485,10 @@ Deno.serve(async (req) => {
       sessionId: sessionId,
       providerSessionId,
       checkoutUrl,
+      qrImageUrl,
+      expiresAt,
+      amountPhp,
+      bookingRef,
     }), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },

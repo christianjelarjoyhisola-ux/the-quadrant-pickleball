@@ -45,14 +45,14 @@ function firstPaymentAttrs(attrs: Record<string, unknown>) {
   return latest?.attributes || {};
 }
 
-function paymentStateFromCheckout(json: Record<string, unknown>) {
+function paymentStateFromPayMongo(json: Record<string, unknown>) {
   const data = (json.data || {}) as Record<string, unknown>;
   const attrs = (data.attributes || {}) as Record<string, unknown>;
   const paymentAttrs = firstPaymentAttrs(attrs);
 
-  const checkoutStatus = String(attrs.status || "");
+  const intentStatus = String(attrs.status || "");
   const paymentStatus = String(paymentAttrs.status || "");
-  const normalized = normalizeStatus(paymentStatus || checkoutStatus);
+  const normalized = normalizeStatus(paymentStatus || intentStatus);
   const paidAt =
     typeof paymentAttrs.paid_at === "string" ? paymentAttrs.paid_at :
     typeof attrs.paid_at === "string" ? attrs.paid_at :
@@ -72,6 +72,26 @@ async function fetchPayMongoCheckout(secretKey: string, sessionId: string) {
   const json = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(`PayMongo lookup failed ${res.status}: ${extractErrMsg(json)}`);
   return json as Record<string, unknown>;
+}
+
+async function fetchPayMongoPaymentIntent(secretKey: string, paymentIntentId: string) {
+  const res = await fetch(`https://api.paymongo.com/v1/payment_intents/${encodeURIComponent(paymentIntentId)}`, {
+    method: "GET",
+    headers: {
+      Authorization: `Basic ${btoa(`${secretKey}:`)}`,
+      "Content-Type": "application/json",
+    },
+  });
+  const json = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(`PayMongo lookup failed ${res.status}: ${extractErrMsg(json)}`);
+  return json as Record<string, unknown>;
+}
+
+async function fetchPayMongoPaymentState(secretKey: string, providerReference: string) {
+  if (providerReference.startsWith("pi_")) {
+    return fetchPayMongoPaymentIntent(secretKey, providerReference);
+  }
+  return fetchPayMongoCheckout(secretKey, providerReference);
 }
 
 async function updateBookingPayment(db: any, booking: BookingRow, normalized: string, paidAt: string | null) {
@@ -148,8 +168,8 @@ Deno.serve(async (req) => {
       });
     }
 
-    const paymongo = await fetchPayMongoCheckout(secretKey, (session as PaymentSessionRow).provider_reference || "");
-    const { normalized, paidAt } = paymentStateFromCheckout(paymongo);
+    const paymongo = await fetchPayMongoPaymentState(secretKey, (session as PaymentSessionRow).provider_reference || "");
+    const { normalized, paidAt } = paymentStateFromPayMongo(paymongo);
 
     const nowIso = new Date().toISOString();
     const paymentUpdate: Record<string, unknown> = {

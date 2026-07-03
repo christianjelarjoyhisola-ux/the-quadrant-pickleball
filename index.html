@@ -12,10 +12,11 @@
 html { scroll-behavior: smooth; -webkit-text-size-adjust:100%; text-size-adjust:100%; touch-action:manipulation; }
 :root {
   --navy: #155e75; --navy-dark: #0f2f3a; --court-blue: #1f7a8c;
-  --court-red: #d97706; --court-red-dark: #b45309; --pickle-lime: #c9cf43;
-  --accent: var(--navy); --accent-dark: var(--navy-dark); --glow: rgba(20,61,99,.18);
-  --cta: var(--court-red); --cta-dark: var(--court-red-dark);
-  --ac: 20, 61, 99;
+  --court-red: #8f1d2c; --court-red-dark: #30080d; --pickle-lime: #c9cf43;
+  --brand-gold: #d6a845; --brand-gold-light: #ffe08a; --brand-gold-dark: #8a5b13; --brand-gold-ink: #160f05;
+  --accent: #a97818; --accent-dark: #70460e; --glow: rgba(214,168,69,.18);
+  --cta: var(--brand-gold); --cta-dark: var(--brand-gold-dark);
+  --ac: 214, 168, 69;
   --bg: #f4f7f8; --card: #ffffff; --border: #d7e0e6;
   --text: #0f2438; --muted: #657486; --input: #eef3f6;
   --dark-text: #f8faf6; --dark-muted: #aec0cf;
@@ -29,7 +30,7 @@ html { scroll-behavior: smooth; -webkit-text-size-adjust:100%; text-size-adjust:
   --r-sm: 8px; --r: 12px; --r-lg: 18px; --pill: 999px;
 }
 body.light { --bg:#f4f7f8; --card:#ffffff; --border:#d7e0e6; --text:#0f2438; --muted:#657486; --input:#eef3f6; --dark-text:#f8faf6; --dark-muted:#aec0cf; }
-body.dark { --bg:#091521; --card:#12283b; --border:#29475f; --text:#f8faf6; --muted:#aec0cf; --input:#0f2234; --accent:#67e8f9; --accent-dark:#155e75; --glow:rgba(127,169,204,.18); --ac:127,169,204; --dark-text:#f8faf6; --dark-muted:#aec0cf; --lime:#dce768; --lime-rgb:220,231,104; --lime-ink:#dce768; }
+body.dark { --bg:#091521; --card:#12283b; --border:#29475f; --text:#f8faf6; --muted:#aec0cf; --input:#0f2234; --accent:#d6a845; --accent-dark:#8a5b13; --glow:rgba(214,168,69,.22); --ac:214,168,69; --dark-text:#f8faf6; --dark-muted:#aec0cf; --lime:#dce768; --lime-rgb:220,231,104; --lime-ink:#dce768; }
 body { font-family:'Outfit',sans-serif; background:var(--bg); color:var(--text); min-height:100vh; transition:background .3s,color .3s; touch-action:manipulation; }
 button, input, select, textarea, label, a, [role="button"], .btn, .cc-slot-btn, .court-tab, .wiz-court-card, .pay-opt, .time-chip {
   touch-action: manipulation;
@@ -93,10 +94,18 @@ body.dark .nav { background:rgba(9,21,33,.94); }
   font-family:'Outfit',sans-serif; font-size:.9rem; font-weight:600;
   cursor:pointer; transition:all .2s; white-space:nowrap;
 }
-.btn-p { background:linear-gradient(135deg,var(--cta),var(--cta-dark)); color:#fff; box-shadow:0 4px 14px rgba(200,61,38,.22); }
-.btn-p:hover { transform:translateY(-2px); box-shadow:0 8px 22px rgba(200,61,38,.28); }
+.btn-p {
+  background:linear-gradient(135deg,var(--brand-gold-light) 0%,var(--cta) 46%,var(--cta-dark) 100%);
+  color:var(--brand-gold-ink);
+  border:1px solid rgba(255,224,138,.7);
+  box-shadow:0 4px 14px rgba(var(--ac),.24), inset 0 1px 0 rgba(255,255,255,.36);
+}
+.btn-p:hover {
+  transform:translateY(-2px);
+  box-shadow:0 8px 24px rgba(var(--ac),.34), 0 0 0 3px rgba(var(--ac),.16), inset 0 1px 0 rgba(255,255,255,.42);
+}
 .btn-g { background:var(--input); color:var(--text); border:1px solid var(--border); }
-.btn-g:hover { background:var(--border); }
+.btn-g:hover { border-color:rgba(var(--ac),.55); background:rgba(var(--ac),.08); }
 .btn-sm { padding:7px 14px; font-size:.82rem; }
 .btn-full { width:100%; justify-content:center; }
 .btn-lg { padding:14px 28px; font-size:1rem; }
@@ -1494,14 +1503,14 @@ footer { background:var(--card); border-top:1px solid var(--border); padding:40p
 }
 .inv-check-wrap {
   width:64px; height:64px; border-radius:50%;
-  background:linear-gradient(135deg,var(--accent),var(--accent-dark));
+  background:linear-gradient(135deg,var(--brand-gold-light),var(--brand-gold),var(--brand-gold-dark));
   display:flex; align-items:center; justify-content:center;
   margin:0 auto 14px; position:relative; z-index:1;
   box-shadow:0 0 0 8px rgba(var(--ac),.15), 0 0 0 16px rgba(var(--ac),.07);
   animation:invPop .5s .2s cubic-bezier(.32,1.4,.5,1) both;
 }
 @keyframes invPop { from { transform:scale(0); opacity:0; } to { transform:scale(1); opacity:1; } }
-.inv-check-icon { font-size:2rem; color:#fff; line-height:1; }
+.inv-check-icon { font-size:2rem; color:var(--brand-gold-ink); line-height:1; }
 .inv-hero-title { font-family:'Bebas Neue',sans-serif; font-size:1.7rem; letter-spacing:2px; position:relative; z-index:1; }
 .inv-hero-sub { font-size:.82rem; color:var(--muted); margin-top:4px; position:relative; z-index:1; }
 .inv-status-bdg { display:inline-block; margin-top:10px; padding:4px 14px; border-radius:20px; font-size:.75rem; font-weight:600; letter-spacing:.5px; position:relative; z-index:1; }
@@ -1598,8 +1607,9 @@ footer { background:var(--card); border-top:1px solid var(--border); padding:40p
 .inv-actions .btn-print:hover { background:var(--border); }
 .inv-actions .btn-done {
   flex:2; padding:11px; border-radius:var(--r-sm); font-size:.9rem; font-weight:700; font-family:'Outfit',sans-serif;
-  background:linear-gradient(135deg,var(--accent),var(--accent-dark));
-  border:none; color:#fff; cursor:pointer; transition:opacity .15s, transform .1s;
+  background:linear-gradient(135deg,var(--brand-gold-light),var(--brand-gold),var(--brand-gold-dark));
+  border:1px solid rgba(255,224,138,.7); color:var(--brand-gold-ink); cursor:pointer; transition:opacity .15s, transform .1s;
+  box-shadow:0 4px 14px rgba(var(--ac),.24), inset 0 1px 0 rgba(255,255,255,.36);
 }
 .inv-actions .btn-done:active { transform:scale(.97); }
 
@@ -2686,7 +2696,7 @@ body.light #splashScreen { background: #071320; }
       <strong style="color:#e6edf3">The Quadrant</strong> is open today.<br/>
       Bring the family, grab a paddle, and let's play!
     </p>
-    <button onclick="closeEasterSplash()" style="background:linear-gradient(135deg,var(--accent),var(--accent-dark));color:#fff;border:none;border-radius:10px;padding:14px 36px;font-family:'Outfit',sans-serif;font-size:1rem;font-weight:700;cursor:pointer;box-shadow:0 6px 24px rgba(var(--ac),.35);transition:transform .2s,box-shadow .2s" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform=''">
+    <button onclick="closeEasterSplash()" style="background:linear-gradient(135deg,var(--brand-gold-light),var(--brand-gold),var(--brand-gold-dark));color:var(--brand-gold-ink);border:1px solid rgba(255,224,138,.7);border-radius:10px;padding:14px 36px;font-family:'Outfit',sans-serif;font-size:1rem;font-weight:700;cursor:pointer;box-shadow:0 6px 24px rgba(var(--ac),.35);transition:transform .2s,box-shadow .2s" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform=''">
       Let's Play! 🐣 &nbsp;<span id="easterCountdown" style="opacity:.7;font-weight:400;font-size:.85rem"></span>
     </button>
   </div>
@@ -2713,7 +2723,7 @@ body.light #splashScreen { background: #071320; }
       <div style="font-weight:800;font-size:1.05rem;color:var(--lime);letter-spacing:.5px">OPEN PLAY IS LIVE TODAY!</div>
       <div style="font-size:.83rem;color:#d7dd8a;margin-top:4px">Walk in & sign up — limited slots available</div>
     </div>
-    <button onclick="closeGrandSplash()" style="background:linear-gradient(135deg,var(--cta),var(--cta-dark));color:#fff;border:none;border-radius:10px;padding:14px 36px;font-family:'Outfit',sans-serif;font-size:1rem;font-weight:700;cursor:pointer;box-shadow:0 6px 24px rgba(200,61,38,.28);transition:transform .2s,box-shadow .2s" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform=''">
+    <button onclick="closeGrandSplash()" style="background:linear-gradient(135deg,var(--brand-gold-light),var(--brand-gold),var(--brand-gold-dark));color:var(--brand-gold-ink);border:1px solid rgba(255,224,138,.7);border-radius:10px;padding:14px 36px;font-family:'Outfit',sans-serif;font-size:1rem;font-weight:700;cursor:pointer;box-shadow:0 6px 24px rgba(var(--ac),.35);transition:transform .2s,box-shadow .2s" onmouseover="this.style.transform='translateY(-2px)'" onmouseout="this.style.transform=''">
       Let's Play! &nbsp;<span id="gsCountdown" style="opacity:.7;font-weight:400;font-size:.85rem"></span>
     </button>
   </div>

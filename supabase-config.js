@@ -335,6 +335,26 @@ function bookingHoldsSlotForConflict(b) {
   return (Date.now() - createdMs) < PB_RESERVATION_HOLD_MINUTES * 60 * 1000;
 }
 
+function isExpiredTemporaryBookingHold(b) {
+  return !bookingHoldsSlotForConflict(b) && b && b.status !== 'cancelled';
+}
+
+async function expireStaleTemporaryBookingHolds(existingBookings = []) {
+  const staleRefs = (existingBookings || [])
+    .filter(isExpiredTemporaryBookingHold)
+    .map(b => b.ref)
+    .filter(Boolean);
+  if (!staleRefs.length) return false;
+
+  const { error } = await _sb
+    .from('bookings')
+    .update({ status: 'cancelled', payment_status: 'rejected' })
+    .in('ref', staleRefs);
+  if (error) throw error;
+  _pbClearFastCache(['bookings']);
+  return true;
+}
+
 function hasSlotConflict(existingBookings, booking) {
   const requested = new Set((booking.slots || []).map(Number));
   if (requested.size === 0) return false;
@@ -561,10 +581,12 @@ window.DB = {
     // Check for slot conflicts before inserting
     const { data: existing } = await _sb
       .from('bookings')
-      .select('ref, status, slots, created_at')
+      .select('ref, status, payment_status, payment_provider, payment_session_id, slots, created_at')
       .eq('court_id', booking.courtId)
       .eq('date', booking.date)
       .neq('status', 'cancelled');
+
+    await expireStaleTemporaryBookingHolds(existing || []);
 
     if (hasSlotConflict(existing, booking)) {
       throw new Error('One or more time slots are no longer available. Please refresh and choose a different time.');
@@ -1395,6 +1417,10 @@ window.DB = {
       const db = readDb();
       const existing = db.bookings
         .filter(b => String(b.courtId) === String(booking.courtId) && b.date === booking.date && b.status !== 'cancelled');
+      const staleRefs = existing.filter(isExpiredTemporaryBookingHold).map(b => b.ref).filter(Boolean);
+      if (staleRefs.length) {
+        db.bookings = db.bookings.map(b => staleRefs.includes(b.ref) ? { ...b, status: 'cancelled', paymentStatus: 'rejected' } : b);
+      }
       if (hasSlotConflict(existing, booking)) {
         throw new Error('One or more time slots are no longer available. Please refresh and choose a different time.');
       }

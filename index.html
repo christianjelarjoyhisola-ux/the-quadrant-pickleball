@@ -5734,6 +5734,22 @@ async function lateNightExtensionCandidate(selections = []) {
   };
 }
 
+function isSlotConflictError(err) {
+  const msg = String(err?.message || err || '').toLowerCase();
+  return msg.includes('no longer available') || msg.includes('already booked') || msg.includes('slot');
+}
+
+async function addBookingWithExpiredHoldRetry(row) {
+  try {
+    await DB.addBooking(row);
+    return;
+  } catch (err) {
+    if (!isSlotConflictError(err)) throw err;
+    await expireStalePaymentHolds();
+    await DB.addBooking(row);
+  }
+}
+
 function closeLateNightExtensionModal(choice = false) {
   const modal = $('lateExtModal');
   if (modal) {
@@ -5807,7 +5823,7 @@ async function proceedToBookLegacy(courtId) {
     gcashRef:      null,
   };
   try {
-    await DB.addBooking(reserveData);
+    await addBookingWithExpiredHoldRetry(reserveData);
   } catch (err) {
     const msg = err?.message || '';
     if (msg.toLowerCase().includes('no longer available') || msg.toLowerCase().includes('already booked')) {
@@ -5890,7 +5906,7 @@ async function proceedToBook(courtId = null) {
 
   try {
     for (const item of reserveItems) {
-      await DB.addBooking({
+      await addBookingWithExpiredHoldRetry({
         ref:           item.ref,
         groupRef:      item.groupRef,
         fullName:      'Reserving...',

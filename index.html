@@ -1934,6 +1934,15 @@ footer { background:var(--card); border-top:1px solid var(--border); padding:40p
 .slot.booked { background: var(--slot-booked); border-color: rgba(143,29,44,.76); cursor: not-allowed; }
 .slot.booked .slot-time { text-decoration: line-through; color: var(--slot-booked-ink); opacity:.78; }
 .slot.booked .slot-tag.booked-tag { background: rgba(143,29,44,.35); color: var(--slot-booked-ink); }
+.slot.processing {
+  background: rgba(var(--slot-processing-rgb),.11);
+  border-color: rgba(var(--slot-processing-rgb),.55);
+  cursor: not-allowed;
+  animation: pulse-slot-processing 1.8s ease-in-out infinite;
+}
+.slot.processing .slot-time { color:#86efac; }
+.slot.processing .slot-end { color:rgba(134,239,172,.72); }
+.slot.processing .slot-tag { background:rgba(var(--slot-processing-rgb),.16); color:#86efac; }
 .slot.past { background: rgba(0,0,0,.18); border-color: var(--border); cursor: not-allowed; }
 .slot.past .slot-time { color: var(--muted); opacity: .5; }
 .slot.past .slot-tag.past-tag { background: rgba(140,140,140,.15); color: var(--muted); }
@@ -3974,7 +3983,8 @@ function getCourtRepair(courtName, date) {
     date >= r.from && date <= r.to
   ) || null;
 }
-let cachedBookedSlots = new Set(); // cached after renderSlots() — avoids re-fetching on every click
+let cachedBookedSlots = new Set(); // cached after renderSlots() - avoids re-fetching on every click
+let cachedPendingSlots = new Set(); // held but not yet paid/confirmed
 let payFull = false; // false = 50% downpayment, true = 100% full payment
 let cardSel   = { courtId: null, courtName: '', date: null, slots: [], rate: 0, tiers: [] };
 let cardSelections = {};
@@ -5650,6 +5660,14 @@ function bookingHoldsSlot(b) {
   return true;
 }
 
+function bookingShowsPendingSlot(b) {
+  const status = String(b?.status || '').toLowerCase();
+  const payStatus = String(b?.paymentStatus || b?.payment_status || '').toLowerCase();
+  if (status === 'verifying') return true;
+  if (status === 'pending' && ['pending', 'unpaid', 'for_verification', ''].includes(payStatus)) return true;
+  return ['pending', 'unpaid', 'for_verification'].includes(payStatus) && status !== 'confirmed';
+}
+
 let lateNightExtensionResolver = null;
 
 function selectedOnlyElevenToMidnight(selections = []) {
@@ -6120,13 +6138,13 @@ async function onCardDate(courtId, date, options = {}) {
     return;
   }
 
-  // Build slot → name map for this date (verifying = yellow lock, others = red taken)
+  // Build slot -> status map for this date (pending = processing, confirmed = booked)
   const slotNameMap = {};
-  const verifyingHrs = new Set();
+  const pendingHrs = new Set();
   bookings.filter(b => b.courtId === courtId && b.date === date && bookingHoldsSlot(b))
           .forEach(b => b.slots.forEach(h => {
             slotNameMap[h] = b.fullName || '';
-            if (b.status === 'verifying') verifyingHrs.add(Number(h));
+            if (bookingShowsPendingSlot(b)) pendingHrs.add(Number(h));
           }));
   const bookedHrs = new Set(Object.keys(slotNameMap).map(Number));
 
@@ -6172,7 +6190,7 @@ async function onCardDate(courtId, date, options = {}) {
     const isMaint_ = isMaintenanceHour(date, h, courtId);
     const timeRange = slotTimeLabel(h);
     if (isPast_)    return `<div class="cc-slot-btn past-slot"><div class="csl-time">${timeRange}</div><div class="csl-tag">${isPastDate_ ? 'Past' : 'Done'}</div></div>`;
-    if (isBooked_ && verifyingHrs.has(h)) return `<div class="cc-slot-btn processing"><div class="csl-time">${timeRange}</div><div class="csl-tag">Processing...</div></div>`;
+    if (isBooked_ && pendingHrs.has(h)) return `<div class="cc-slot-btn processing"><div class="csl-time">${timeRange}</div><div class="csl-tag">Pending</div></div>`;
     if (isBooked_) return `<div class="cc-slot-btn taken"><div class="csl-time">${timeRange}</div><div class="csl-name">Booked</div></div>`;
     if (isMaint_)  { const _ml=getMaintenanceLabel(date,h,courtId); return `<div class="cc-slot-btn maintenance"><div class="csl-time">${timeRange}</div><div class="csl-tag">${_ml.icon} ${_ml.text}</div></div>`; }
     if (isOpenPlay_) return '';
@@ -6222,11 +6240,11 @@ async function renderCourts() {
 
     // Build slot → booking name map
     const slotNameMap = {};
-    const verifyingHoursSet = new Set();
+    const pendingHoursSet = new Set();
     bookings.filter(b => b.courtId === c.id && b.date === selectedDate && bookingHoldsSlot(b))
             .forEach(b => b.slots.forEach(h => {
               slotNameMap[h] = b.fullName || '';
-              if (b.status === 'verifying') verifyingHoursSet.add(Number(h));
+              if (bookingShowsPendingSlot(b)) pendingHoursSet.add(Number(h));
             }));
     const bookedHours = new Set(Object.keys(slotNameMap).map(Number));
 
@@ -6274,7 +6292,7 @@ async function renderCourts() {
           const isSelectedSlot_ = !!cardSelection && cardSelection.date === selectedDate && cardSelection.slots.includes(h);
           const timeRange = slotTimeLabel(h);
           if (isPast_)    return `<div class="cc-slot-btn past-slot"><div class="csl-time">${timeRange}</div><div class="csl-tag">${isSelectedPast ? 'Past' : 'Done'}</div></div>`;
-          if (isBooked_ && verifyingHoursSet.has(h)) return `<div class="cc-slot-btn processing"><div class="csl-time">${timeRange}</div><div class="csl-tag">Processing...</div></div>`;
+          if (isBooked_ && pendingHoursSet.has(h)) return `<div class="cc-slot-btn processing"><div class="csl-time">${timeRange}</div><div class="csl-tag">Pending</div></div>`;
           if (isBooked_) return `<div class="cc-slot-btn taken"><div class="csl-time">${timeRange}</div><div class="csl-name">Booked</div></div>`;
           if (isMaint_)  { const _ml=getMaintenanceLabel(selectedDate,h,c.id); return `<div class="cc-slot-btn maintenance"><div class="csl-time">${timeRange}</div><div class="csl-tag">${esc(_ml.icon)} ${esc(_ml.text)}</div></div>`; }
           if (isOpenPlay_) return '';
@@ -6441,6 +6459,20 @@ async function getBookedSlots(cid, date) {
   return s;
 }
 
+async function getSlotHoldState(cid, date) {
+  const bookings = await DB.getBookings({ courtId: cid, date, activeOnly: true });
+  const booked = new Set();
+  const pending = new Set();
+  bookings.filter(bookingHoldsSlot).forEach(b => {
+    (b.slots || []).forEach(h => {
+      const hour = Number(h);
+      booked.add(hour);
+      if (bookingShowsPendingSlot(b)) pending.add(hour);
+    });
+  });
+  return { booked, pending };
+}
+
 async function renderSlots() {
   const g = $('slotsGrid'), m = $('slotMsg');
   if (!g || !m) return;
@@ -6477,8 +6509,11 @@ async function renderSlots() {
   if (court.rateSchedule && court.rateSchedule.length) {
     pricingTiers = court.rateSchedule;
   }
-  cachedBookedSlots = await getBookedSlots(court.id, date);
+  const holdState = await getSlotHoldState(court.id, date);
+  cachedBookedSlots = holdState.booked;
+  cachedPendingSlots = holdState.pending;
   const booked = cachedBookedSlots;
+  const pending = cachedPendingSlots;
   const todayFlag = isToday(date);
   const curHour = nowHour();
 
@@ -6531,6 +6566,7 @@ async function renderSlots() {
     if (isSel)             { cls += ' sel'; }
     else if (isPast)       { cls += ' past'; tag = `<span class="slot-tag past-tag">DONE</span>`; }
     else if (isNow)        { cls += ' now';  tag = `<span class="slot-tag">NOW</span>`; }
+    else if (isBooked && pending.has(h)) { cls += ' processing'; tag = `<span class="slot-tag">Pending</span>`; }
     else if (isBooked)     { cls += ' booked'; tag = `<span class="slot-tag booked-tag">Booked</span>`; }
     else if (isMaint)      { const _ml=getMaintenanceLabel(date,h,court?.id); cls += ' maintenance'; tag = `<span class="slot-tag mt-tag">${_ml.icon} ${_ml.text}</span>`; }
     else if (isOpenPlay)   { cls += ' open-play'; tag = `<span class="slot-tag op-tag">🏓 Open Play<span class="op-tap">Tap to register</span></span>`; }

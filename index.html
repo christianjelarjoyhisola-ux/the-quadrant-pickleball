@@ -118,54 +118,60 @@ body.dark .nav { background:rgba(9,21,33,.94); }
 }
 .qrph-pay-overlay.show { display:flex; }
 .qrph-pay-card {
-  width:min(440px,100%); max-height:min(92vh,760px); overflow:auto;
+  width:min(420px,100%); max-height:min(92vh,720px); overflow:auto;
   background:linear-gradient(180deg,#111820 0%,#071018 100%);
   color:#f8f3e4; border:1px solid rgba(214,168,69,.42);
   border-radius:18px; box-shadow:0 24px 70px rgba(0,0,0,.5);
 }
 .qrph-pay-head {
-  padding:18px 20px; display:flex; align-items:center; justify-content:space-between; gap:14px;
+  padding:14px 16px; display:flex; align-items:center; justify-content:space-between; gap:12px;
   border-bottom:1px solid rgba(214,168,69,.24);
 }
 .qrph-pay-brand { display:flex; align-items:center; gap:10px; min-width:0; }
-.qrph-pay-logo { width:44px; height:44px; border-radius:50%; object-fit:cover; border:1px solid rgba(214,168,69,.52); background:#050607; }
-.qrph-pay-title { font-family:'Bebas Neue',sans-serif; letter-spacing:2px; font-size:1.35rem; line-height:1; }
-.qrph-pay-sub { color:#c7b889; font-size:.72rem; font-weight:800; letter-spacing:1.4px; text-transform:uppercase; margin-top:3px; }
+.qrph-pay-logo { width:38px; height:38px; border-radius:50%; object-fit:cover; border:1px solid rgba(214,168,69,.52); background:#050607; }
+.qrph-pay-title { font-family:'Bebas Neue',sans-serif; letter-spacing:1.6px; font-size:1.18rem; line-height:1; }
+.qrph-pay-sub { color:#c7b889; font-size:.62rem; font-weight:800; letter-spacing:1.1px; text-transform:uppercase; margin-top:3px; }
 .qrph-pay-close {
-  width:34px; height:34px; border-radius:50%; border:1px solid rgba(214,168,69,.28);
+  width:30px; height:30px; border-radius:50%; border:1px solid rgba(214,168,69,.28);
   background:rgba(255,255,255,.06); color:#f8f3e4; font-size:1.1rem; cursor:pointer;
 }
-.qrph-pay-body { padding:18px 20px 20px; }
-.qrph-pay-ref { font-size:.78rem; color:#c7b889; text-transform:uppercase; letter-spacing:1px; font-weight:900; }
-.qrph-pay-ref strong { display:block; margin-top:4px; color:#fff; font-size:1.1rem; letter-spacing:1.5px; }
+.qrph-pay-body { padding:14px 16px 16px; }
+.qrph-pay-ref { font-size:.68rem; color:#c7b889; text-transform:uppercase; letter-spacing:.9px; font-weight:900; }
+.qrph-pay-ref strong { display:block; margin-top:3px; color:#fff; font-size:.95rem; letter-spacing:1.1px; }
 .qrph-pay-amount {
-  margin:14px 0; padding:14px; border-radius:14px;
+  margin:10px 0; padding:11px 12px; border-radius:12px;
   background:rgba(214,168,69,.12); border:1px solid rgba(214,168,69,.28);
   display:flex; align-items:flex-end; justify-content:space-between; gap:12px;
 }
-.qrph-pay-amount span { color:#c7b889; font-size:.72rem; font-weight:900; text-transform:uppercase; letter-spacing:1px; }
-.qrph-pay-amount strong { color:var(--brand-gold-light); font-size:2.1rem; line-height:1; }
+.qrph-pay-amount span { color:#c7b889; font-size:.64rem; font-weight:900; text-transform:uppercase; letter-spacing:.9px; }
+.qrph-pay-amount strong { color:var(--brand-gold-light); font-size:1.72rem; line-height:1; }
 .qrph-pay-qrbox {
-  background:#fff; border-radius:16px; padding:14px; display:flex; align-items:center; justify-content:center;
+  background:#fff; border-radius:14px; padding:10px; display:flex; align-items:center; justify-content:center;
   border:3px solid var(--brand-gold); box-shadow:0 12px 32px rgba(0,0,0,.24);
 }
-.qrph-pay-qrbox img { width:min(280px,78vw); height:min(280px,78vw); object-fit:contain; display:block; }
-.qrph-pay-meta { margin-top:14px; display:grid; gap:8px; }
-.qrph-pay-row { display:flex; align-items:center; justify-content:space-between; gap:12px; color:#d8decd; font-size:.86rem; }
+.qrph-pay-qrbox img { width:min(250px,74vw,40vh); height:min(250px,74vw,40vh); object-fit:contain; display:block; }
+.qrph-pay-meta { margin-top:10px; display:grid; gap:6px; }
+.qrph-pay-row { display:flex; align-items:center; justify-content:space-between; gap:12px; color:#d8decd; font-size:.78rem; }
 .qrph-pay-row strong { color:#fff; text-align:right; }
 .qrph-pay-note {
-  margin-top:14px; padding:11px 12px; border-radius:12px;
+  margin-top:10px; padding:9px 10px; border-radius:10px;
   background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.1);
-  color:#d8decd; font-size:.82rem; line-height:1.35;
+  color:#d8decd; font-size:.74rem; line-height:1.28;
 }
-.qrph-pay-actions { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:16px; }
+.qrph-pay-actions { display:grid; grid-template-columns:1fr; gap:10px; margin-top:12px; }
 .qrph-pay-status {
-  margin-top:12px; color:#c7b889; font-size:.82rem; font-weight:800; text-align:center;
+  margin-top:9px; color:#c7b889; font-size:.76rem; font-weight:800; text-align:center;
 }
 @media(max-width:480px) {
-  .qrph-pay-overlay { padding:0; align-items:flex-end; }
-  .qrph-pay-card { width:100%; max-height:94vh; border-radius:18px 18px 0 0; }
-  .qrph-pay-actions { grid-template-columns:1fr; }
+  .qrph-pay-overlay { padding:8px; align-items:center; }
+  .qrph-pay-card { width:100%; max-height:calc(100dvh - 16px); border-radius:16px; }
+  .qrph-pay-head { padding:10px 12px; }
+  .qrph-pay-body { padding:11px 12px 12px; }
+  .qrph-pay-logo { width:34px; height:34px; }
+  .qrph-pay-title { font-size:1.05rem; }
+  .qrph-pay-sub { display:none; }
+  .qrph-pay-qrbox img { width:min(228px,72vw,38vh); height:min(228px,72vw,38vh); }
+  .qrph-pay-note { font-size:.69rem; }
 }
 
 /* HERO */
@@ -3481,7 +3487,6 @@ body.light #splashScreen { background: #071320; }
         Scan this QR with GCash, Maya, or any QRPh-supported bank app. The booking will confirm automatically after PayMongo verifies the payment.
       </div>
       <div class="qrph-pay-actions">
-        <button class="btn btn-g btn-full" type="button" onclick="closeQrphPaymentModal(true)">Pay later</button>
         <button class="btn btn-p btn-full" type="button" id="qrphCheckBtn" onclick="checkQrphPaymentNow()">Check Payment</button>
       </div>
       <div class="qrph-pay-status" id="qrphPayStatus">Waiting for payment...</div>

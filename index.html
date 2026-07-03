@@ -5015,7 +5015,7 @@ function showQrphPaymentModal(booking, session, itemBookings = []) {
   if (!qrImage) return false;
 
   const expires = session?.expiresAt || session?.expires_at || '';
-  const expiresAt = expires ? new Date(expires).getTime() : Date.now() + 30 * 60 * 1000;
+  const expiresAt = expires ? new Date(expires).getTime() : Date.now() + RESERVATION_MINUTES * 60 * 1000;
   qrphPaymentState = { booking, items: itemBookings, session, timer: null, countdownTimer: null, expiresAt, checking: false };
 
   if ($('qrphPayRef')) $('qrphPayRef').textContent = booking.ref;
@@ -5646,6 +5646,28 @@ async function releaseReservedBookingViews(items = activeBookingItems()) {
 // RENDER time — even if no cleanup write ever succeeded (browser closed, network
 // drop, edge-fn failure). This makes the grid self-healing: stale "Processing…"
 // slots free themselves automatically instead of getting stuck forever.
+function bookingCreatedAgeMs(b) {
+  const raw = b?.createdAt || b?.created_at;
+  if (!raw) return null;
+  const ms = new Date(raw).getTime();
+  return Number.isFinite(ms) ? Date.now() - ms : null;
+}
+
+function isHeldWithinReservationWindow(b) {
+  const age = bookingCreatedAgeMs(b);
+  if (age === null) return true;
+  return age < RESERVATION_MINUTES * 60 * 1000;
+}
+
+function isPendingPaymentHold(b) {
+  const status = String(b?.status || '').toLowerCase();
+  const payStatus = String(b?.paymentStatus || b?.payment_status || '').toLowerCase();
+  const provider = String(b?.paymentProvider || b?.payment_provider || '').toLowerCase();
+  const hasProviderSession = !!(b?.paymentSessionId || b?.payment_session_id);
+  const isPaymongo = provider.includes('paymongo') || hasProviderSession;
+  return isPaymongo && status === 'pending' && ['pending', 'unpaid', 'for_verification', ''].includes(payStatus);
+}
+
 function isHeldVerifying(b) {
   if (b.status !== 'verifying') return false;
   if (!b.createdAt) return true; // no timestamp → treat as fresh hold
@@ -5657,6 +5679,7 @@ function isHeldVerifying(b) {
 function bookingHoldsSlot(b) {
   if (b.status === 'cancelled') return false;
   if (b.status === 'verifying') return isHeldVerifying(b);
+  if (isPendingPaymentHold(b)) return isHeldWithinReservationWindow(b);
   return true;
 }
 
@@ -5664,6 +5687,7 @@ function bookingShowsPendingSlot(b) {
   const status = String(b?.status || '').toLowerCase();
   const payStatus = String(b?.paymentStatus || b?.payment_status || '').toLowerCase();
   if (status === 'verifying') return true;
+  if (isPendingPaymentHold(b)) return isHeldWithinReservationWindow(b);
   if (status === 'pending' && ['pending', 'unpaid', 'for_verification', ''].includes(payStatus)) return true;
   return ['pending', 'unpaid', 'for_verification'].includes(payStatus) && status !== 'confirmed';
 }
@@ -7815,7 +7839,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   initDark();
   await DB.seedDefaultData();
   await loadOperatingHours();
-  await expireStaleVerifyingBookings();
+  await expireStalePaymentHolds();
   await renderCourts();
   await handlePaymentReturn();
   initGuestResumePersistence();
@@ -7846,6 +7870,21 @@ async function expireStaleVerifyingBookings() {
     const stale = all.filter(b =>
       b.status === 'verifying' &&
       b.createdAt && new Date(b.createdAt).getTime() < cutoff
+    );
+    await Promise.all(stale.map(b =>
+      DB.updateBooking(b.ref, { status: 'cancelled', paymentStatus: 'rejected' }).catch(() => {})
+    ));
+  } catch(_) {}
+}
+
+async function expireStalePaymentHolds() {
+  try {
+    const all = await DB.getBookings();
+    const cutoff = Date.now() - RESERVATION_MINUTES * 60 * 1000;
+    const stale = all.filter(b =>
+      (b.status === 'verifying' || isPendingPaymentHold(b)) &&
+      (b.createdAt || b.created_at) &&
+      new Date(b.createdAt || b.created_at).getTime() < cutoff
     );
     await Promise.all(stale.map(b =>
       DB.updateBooking(b.ref, { status: 'cancelled', paymentStatus: 'rejected' }).catch(() => {})

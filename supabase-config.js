@@ -317,7 +317,14 @@ const PB_RESERVATION_HOLD_MINUTES = 15;
 
 function bookingHoldsSlotForConflict(b) {
   if (!b || b.status === 'cancelled') return false;
-  if (b.status !== 'verifying') return true;
+  const status = String(b.status || '').toLowerCase();
+  const payStatus = String(b.paymentStatus || b.payment_status || '').toLowerCase();
+  const provider = String(b.paymentProvider || b.payment_provider || '').toLowerCase();
+  const hasProviderSession = !!(b.paymentSessionId || b.payment_session_id);
+  const isTemporaryHold =
+    status === 'verifying' ||
+    ((provider.includes('paymongo') || hasProviderSession) && status === 'pending' && ['pending', 'unpaid', 'for_verification', ''].includes(payStatus));
+  if (!isTemporaryHold) return true;
 
   const created = b.created_at || b.createdAt;
   if (!created) return true;

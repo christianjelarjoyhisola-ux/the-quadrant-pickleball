@@ -216,7 +216,7 @@ async function createPayMongoQrphSession(input: {
         payment_method_allowed: ["qrph"],
         payment_method_options: {
           qrph: {
-            expires_after: 1800,
+            expires_after: 900,
           },
         },
         capture_type: "automatic",

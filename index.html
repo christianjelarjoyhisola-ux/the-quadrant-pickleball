@@ -3477,7 +3477,7 @@ body.light #splashScreen { background: #071320; }
           <div class="qrph-pay-sub">The Quadrant Booking</div>
         </div>
       </div>
-      <button class="qrph-pay-close" type="button" onclick="closeQrphPaymentModal(true)" aria-label="Close">&times;</button>
+      <button class="qrph-pay-close" type="button" onclick="cancelQrphPaymentFromClose()" aria-label="Cancel unpaid payment">&times;</button>
     </div>
     <div class="qrph-pay-body">
       <div class="qrph-pay-ref">Booking Reference <strong id="qrphPayRef">TQ-</strong></div>
@@ -5012,9 +5012,58 @@ function closeQrphPaymentModal(showPendingInvoice = true) {
   }
 }
 
+async function cancelQrphPaymentFromClose() {
+  const booking = qrphPaymentState.booking;
+  if (!booking) {
+    closeQrphPaymentModal(false);
+    return;
+  }
+  try {
+    const sync = await DB.syncPaymentSession({ bookingRef: booking.ref }, { allowFailure: true }).catch(() => null);
+    const fresh = String(booking.ref || '').startsWith('OP-')
+      ? null
+      : await DB.getBookingByRef(booking.ref).catch(() => null);
+    const paid = sync?.paid || sync?.status === 'paid' || fresh?.paymentStatus === 'paid' || fresh?.payment_status === 'paid' || fresh?.status === 'confirmed';
+    if (paid) {
+      await completeQrphPaidBooking(fresh || booking);
+      return;
+    }
+
+    closeQrphPaymentModal(false);
+    const refs = new Set();
+    if (booking.ref) refs.add(String(booking.ref));
+    (qrphPaymentState.items || []).forEach(item => { if (item?.ref) refs.add(String(item.ref)); });
+
+    if (String(booking.ref || '').startsWith('OP-')) {
+      const openPlayId = String(booking.ref || '').replace(/^OP-/i, '');
+      if (openPlayId) await DB.updateOpenPlayRegistration(openPlayId, { paymentStatus: 'rejected' }).catch(() => {});
+      closeOpModal();
+      toast('Open Play payment cancelled. Spot released.', 'inf');
+      await renderCourts();
+      return;
+    }
+
+    await Promise.allSettled([...refs].map(ref =>
+      DB.updateBooking(ref, { status: 'cancelled', paymentStatus: 'rejected' })
+    ));
+    resetForm();
+    toast('QRPh payment cancelled. Slot released.', 'inf');
+    await renderCourts();
+    if (court && $('bDate')?.value) await renderSlots();
+  } catch (err) {
+    closeQrphPaymentModal(false);
+    toast('Payment window closed. Please refresh if the slot still appears pending.', 'inf');
+  }
+}
+
 async function completeQrphPaidBooking(booking) {
   closeQrphPaymentModal(false);
   if (String(booking?.ref || '').startsWith('OP-')) {
+    DB.sendOpenPlayConfirmationEmail({
+      ...booking,
+      id: String(booking.ref || '').replace(/^OP-/i, ''),
+      payment_status: 'paid',
+    }, { allowFailure: true }).catch(() => {});
     closeOpModal();
     toast('QRPh payment received. Open Play spot confirmed.', 'ok');
     await renderCourts();
@@ -8546,6 +8595,7 @@ async function submitOpenPlay() {
         const timeLabel = _opSignupData.sessionLabel || `${fmtT(_opSignupData.hour)} – ${fmtT(_opSignupData.hour + 1)}`;
         await DB.addOpenPlayRegistration({
           fullName: name,
+          email,
           courtId: _opSignupData.courtId,
           courtName: _opSignupData.courtName,
           date: _opSignupData.date,
@@ -8574,6 +8624,7 @@ async function submitOpenPlay() {
     const timeLabel = _opSignupData.sessionLabel || `${fmtT(_opSignupData.hour)} – ${fmtT(_opSignupData.hour + 1)}`;
     const registration = await DB.addOpenPlayRegistration({
       fullName: name,
+      email,
       courtId: _opSignupData.courtId,
       courtName: _opSignupData.courtName,
       date: _opSignupData.date,
@@ -8605,6 +8656,10 @@ async function submitOpenPlay() {
       amount: amt,
     }, { allowFailure: true }).catch(() => {});
 
+    if (regPayStatus === 'paid') {
+      DB.sendOpenPlayConfirmationEmail(registration, { allowFailure: true }).catch(() => {});
+    }
+
     if (qrphCheckout) {
       try {
         const session = await createOpenPlayPaymentSession(registration, {
@@ -8617,10 +8672,13 @@ async function submitOpenPlay() {
         const qrBooking = {
           ref: `OP-${registration.id}`,
           fullName: name,
+          email,
           courtName: _opSignupData.courtName,
           courtLabel: openPlayCourtGroupLabel || _opSignupData.courtName,
           date: _opSignupData.date,
           timeLabel,
+          paymentType: payType,
+          paymentMethod: _opSignupData.payMethod,
           downpayment: amt,
           total: amt,
         };

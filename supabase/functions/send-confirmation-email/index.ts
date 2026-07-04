@@ -7,6 +7,7 @@ const LOGO_URL = Deno.env.get("APP_LOGO_URL") || "https://replace-with-domain/th
 const VENUE_LOCATION = Deno.env.get("APP_LOCATION") || "Dauman, Montevista";
 
 type Payload = {
+  type?: "booking" | "open_play";
   bookingRef: string;
   email: string;
   fullName: string;
@@ -18,6 +19,9 @@ type Payload = {
   total: number;
   downpayment: number;
   contactNumber?: string;
+  timeLabel?: string;
+  paymentType?: string;
+  paymentMethod?: string;
   bookingItems?: Array<{
     courtName: string;
     date: string;
@@ -196,6 +200,94 @@ function buildHtml(p: Payload): string {
 </html>`;
 }
 
+function buildOpenPlayHtml(p: Payload): string {
+  const fullName = escapeHtml(p.fullName);
+  const openPlayRef = escapeHtml(p.bookingRef);
+  const courtName = escapeHtml(p.courtName || "Open Play Courts");
+  const dateText = fmtDate(p.date);
+  const timeText = escapeHtml(p.timeLabel || p.startTime || "Open Play");
+  const amount = Number(p.downpayment || p.total || 0);
+  const paymentType = escapeHtml(p.paymentType || "Open Play");
+
+  return `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<meta name="color-scheme" content="dark"/>
+<meta name="supported-color-schemes" content="dark"/>
+<title>Open Play Confirmed - THE QUADRANT</title>
+</head>
+<body style="margin:0;padding:0;background:#15171b;background-image:linear-gradient(#15171b,#15171b);font-family:'Segoe UI',Arial,sans-serif;">
+<table width="100%" cellpadding="0" cellspacing="0" style="background:#15171b;background-image:linear-gradient(#15171b,#15171b);padding:32px 0;">
+  <tr><td align="center">
+    <table width="560" cellpadding="0" cellspacing="0" style="background:#202428;background-image:linear-gradient(#202428,#202428);border:1px solid #323840;border-radius:14px;overflow:hidden;box-shadow:0 12px 34px rgba(0,0,0,.42);max-width:560px;width:100%;">
+      <tr><td style="background:#75330f;background-image:linear-gradient(#75330f,#75330f);padding:34px 36px 30px;text-align:center;border-top:6px solid #f59a38;border-bottom:1px solid #8f4518;">
+        <img src="${LOGO_URL}" width="96" height="96" alt="The Quadrant logo" style="display:block;width:96px;height:96px;margin:0 auto 14px;border-radius:50%;object-fit:cover;background:#050607;border:4px solid #0f1720;"/>
+        <div style="font-family:'Bebas Neue',Georgia,serif;font-size:1.6rem;letter-spacing:3px;color:#1b1f24;line-height:1.1;font-weight:900;">THE QUADRANT</div>
+        <div style="font-size:.75rem;color:#2c221b;letter-spacing:2px;text-transform:uppercase;margin-top:4px;font-weight:700;">${escapeHtml(VENUE_LOCATION)}</div>
+      </td></tr>
+      <tr><td style="background:#c95a1c;background-image:linear-gradient(#c95a1c,#c95a1c);padding:14px 36px;text-align:center;">
+        <div style="color:#1d2024;font-size:1rem;font-weight:900;letter-spacing:1px;">&#10003; OPEN PLAY CONFIRMED</div>
+      </td></tr>
+      <tr><td style="padding:32px 36px;background:#202428;background-image:linear-gradient(#202428,#202428);">
+        <p style="margin:0 0 20px;font-size:1rem;color:#f7fafc;">Hi <strong>${fullName}</strong>,</p>
+        <p style="margin:0 0 24px;font-size:.95rem;color:#d7dee8;line-height:1.6;">
+          Your Open Play spot at <strong style="color:#f49a4a;">THE QUADRANT</strong> is confirmed. Your payment has been received and your reference is locked in.
+        </p>
+        <table width="100%" cellpadding="0" cellspacing="0" style="background:#1d241e;background-image:linear-gradient(#1d241e,#1d241e);border:1.5px solid #8b4b20;border-radius:10px;margin-bottom:24px;">
+          <tr><td style="padding:18px 22px;border-bottom:1px solid #384033;">
+            <div style="font-size:.7rem;text-transform:uppercase;letter-spacing:1px;color:#aab6c5;margin-bottom:4px;">Open Play Reference</div>
+            <div style="font-size:1.1rem;font-weight:800;color:#f49a4a;font-family:monospace;letter-spacing:1px;">${openPlayRef}</div>
+          </td></tr>
+          <tr><td style="padding:14px 22px;border-bottom:1px solid #384033;">
+            <table width="100%"><tr>
+              <td width="50%" style="vertical-align:top;">
+                <div style="font-size:.7rem;text-transform:uppercase;letter-spacing:1px;color:#aab6c5;margin-bottom:3px;">Session</div>
+                <div style="font-size:.92rem;font-weight:700;color:#f7fafc;">${courtName}</div>
+              </td>
+              <td width="50%" style="vertical-align:top;">
+                <div style="font-size:.7rem;text-transform:uppercase;letter-spacing:1px;color:#aab6c5;margin-bottom:3px;">Date</div>
+                <div style="font-size:.92rem;font-weight:700;color:#f7fafc;">${dateText}</div>
+              </td>
+            </tr></table>
+          </td></tr>
+          <tr><td style="padding:14px 22px;">
+            <table width="100%"><tr>
+              <td width="50%" style="vertical-align:top;">
+                <div style="font-size:.7rem;text-transform:uppercase;letter-spacing:1px;color:#aab6c5;margin-bottom:3px;">Time</div>
+                <div style="font-size:.92rem;font-weight:700;color:#f7fafc;">${timeText}</div>
+              </td>
+              <td width="50%" style="vertical-align:top;">
+                <div style="font-size:.7rem;text-transform:uppercase;letter-spacing:1px;color:#aab6c5;margin-bottom:3px;">Payment</div>
+                <div style="font-size:1.05rem;font-weight:800;color:#f49a4a;">&#10003; ${fmtPHP(amount)} ${paymentType ? `(${paymentType})` : ""}</div>
+              </td>
+            </tr></table>
+          </td></tr>
+        </table>
+        <table width="100%" cellpadding="0" cellspacing="0" style="background:#281c12;background-image:linear-gradient(#281c12,#281c12);border:1.5px solid #a85f1f;border-radius:10px;margin-bottom:24px;">
+          <tr><td style="padding:14px 18px;">
+            <div style="font-size:.82rem;color:#f2d6b3;line-height:1.6;">
+              <strong>&#128203; Reminders:</strong><br/>
+              &bull; Please arrive <strong>10 minutes early</strong>.<br/>
+              &bull; Bring your Open Play reference: <strong>${openPlayRef}</strong><br/>
+              &bull; Check in at the front desk before joining the rotation.
+            </div>
+          </td></tr>
+        </table>
+        <p style="margin:0;font-size:.88rem;color:#aab6c5;line-height:1.6;">Questions? Contact us directly. See you on the court!</p>
+      </td></tr>
+      <tr><td style="background:#1b2025;background-image:linear-gradient(#1b2025,#1b2025);padding:18px 36px;text-align:center;border-top:1px solid #30363d;">
+        <div style="font-size:.75rem;color:#f49a4a;letter-spacing:1px;">THE QUADRANT</div>
+        <div style="font-size:.72rem;color:#7f8ea3;margin-top:4px;">This is an automated confirmation email.</div>
+      </td></tr>
+    </table>
+  </td></tr>
+</table>
+</body>
+</html>`;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return new Response("Method not allowed", { status: 405, headers: corsHeaders });
@@ -213,6 +305,10 @@ Deno.serve(async (req) => {
     }
 
     const fromAddress = Deno.env.get("EMAIL_FROM") || "THE QUADRANT <onboarding@resend.dev>";
+    const isOpenPlay = body.type === "open_play" || /^OP-/i.test(body.bookingRef);
+    const subject = isOpenPlay
+      ? `Open Play Confirmed - ${body.bookingRef} | THE QUADRANT`
+      : `Booking Confirmed - ${body.bookingRef} | THE QUADRANT`;
 
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
@@ -223,8 +319,8 @@ Deno.serve(async (req) => {
       body: JSON.stringify({
         from: fromAddress,
         to: [body.email],
-        subject: `Booking Confirmed - ${body.bookingRef} | THE QUADRANT`,
-        html: buildHtml(body),
+        subject,
+        html: isOpenPlay ? buildOpenPlayHtml(body) : buildHtml(body),
       }),
     });
 

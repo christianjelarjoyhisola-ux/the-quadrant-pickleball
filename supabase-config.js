@@ -212,6 +212,26 @@ function _bookingEmailPayload(b) {
   };
 }
 
+function _openPlayEmailPayload(r) {
+  return {
+    type: 'open_play',
+    bookingRef: r.displayRef || r.ref || (r.id ? `OP-${r.id}` : ''),
+    email: r.email || r.email_address,
+    fullName: r.fullName || r.full_name,
+    courtName: r.courtName || r.court_name || 'Open Play Courts',
+    date: r.date,
+    startTime: r.startTime || r.timeLabel || r.time_label || '',
+    endTime: r.endTime || '',
+    duration: r.duration || 0,
+    total: r.total ?? r.amount ?? 0,
+    downpayment: r.downpayment ?? r.amount ?? 0,
+    contactNumber: r.contactNumber || r.contact_number,
+    timeLabel: r.timeLabel || r.time_label || '',
+    paymentType: r.paymentType || r.payment_type || '',
+    paymentMethod: r.paymentMethod || r.payment_method || '',
+  };
+}
+
 function _telegramBookingPayload(b, extras = {}) {
   return {
     bookingRef: b.ref,
@@ -664,6 +684,8 @@ window.DB = {
   async addOpenPlayRegistration(reg) {
     const { data, error } = await _sb.from('open_play_registrations').insert({
       full_name: reg.fullName,
+      email: reg.email || null,
+      contact_number: reg.contactNumber || null,
       court_id: String(reg.courtId),
       court_name: reg.courtName,
       date: reg.date,
@@ -692,6 +714,8 @@ window.DB = {
   async updateOpenPlayRegistration(id, updates) {
     const row = {};
     if (updates.paymentStatus !== undefined) row.payment_status = updates.paymentStatus;
+    if (updates.email !== undefined) row.email = updates.email;
+    if (updates.contactNumber !== undefined) row.contact_number = updates.contactNumber;
     if (updates.gcashRef      !== undefined) row.gcash_ref      = updates.gcashRef;
     if (updates.receiptImageUrl !== undefined) row.receipt_image_url = updates.receiptImageUrl;
     if (updates.receiptImageHash !== undefined) row.receipt_image_hash = updates.receiptImageHash;
@@ -1031,6 +1055,15 @@ window.DB = {
   async sendConfirmationEmail(booking, options = {}) {
     if (!booking?.email) return { ok: false, skipped: true, reason: 'No customer email' };
     return _invokeEdgeFunction('send-confirmation-email', _bookingEmailPayload(booking), {
+      allowFailure: !!options.allowFailure,
+    });
+  },
+
+  async sendOpenPlayConfirmationEmail(registration, options = {}) {
+    const payload = _openPlayEmailPayload(registration || {});
+    if (!payload.email) return { ok: false, skipped: true, reason: 'No customer email' };
+    if (!payload.bookingRef) return { ok: false, skipped: true, reason: 'No Open Play reference' };
+    return _invokeEdgeFunction('send-confirmation-email', payload, {
       allowFailure: !!options.allowFailure,
     });
   },
@@ -1470,6 +1503,8 @@ window.DB = {
       const row = {
         id: localRef('op'),
         full_name: reg.fullName,
+        email: reg.email || null,
+        contact_number: reg.contactNumber || null,
         court_id: String(reg.courtId),
         court_name: reg.courtName,
         date: reg.date,
@@ -1835,6 +1870,7 @@ window.DB = {
     async createPaymentSession() { throw new Error('Online checkout is disabled in local data mode.'); },
     async syncPaymentSession() { return { ok: false, skipped: true, reason: 'Local data mode' }; },
     async sendConfirmationEmail() { return { ok: true, skipped: true, reason: 'Local data mode' }; },
+    async sendOpenPlayConfirmationEmail() { return { ok: true, skipped: true, reason: 'Local data mode' }; },
     async sendRescheduleEmail() { return { ok: true, skipped: true, reason: 'Local data mode' }; },
     async sendTelegramNotification() { return { ok: true, skipped: true, reason: 'Local data mode' }; },
     async notifyBookingSubmitted() { return { ok: true, skipped: true, reason: 'Local data mode' }; },

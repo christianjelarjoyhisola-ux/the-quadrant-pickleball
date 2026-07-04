@@ -7302,7 +7302,10 @@ async function renderOpRegistrations() {
               : `<span style="font-size:.72rem;font-weight:700;padding:2px 7px;border-radius:20px;background:rgba(var(--yellow-rgb),.15);color:var(--yellow)">🕐 Pending</span>`;
             return `
             <tr style="border-bottom:1px solid var(--border)">
-              <td style="padding:9px 10px;font-weight:600">${esc(r.full_name)}</td>
+              <td style="padding:9px 10px;font-weight:600">
+                <div>${esc(r.full_name)}</div>
+                ${r.email ? `<div style="font-size:.72rem;color:var(--muted);font-weight:500;margin-top:2px">${esc(r.email)}</div>` : ''}
+              </td>
               <td style="padding:9px 10px;color:var(--muted)">${esc(r.court_name || '—')}</td>
               <td style="padding:9px 10px">${fmtD(r.date)}</td>
               <td style="padding:9px 10px">${esc(r.time_label || '—')}</td>
@@ -7386,7 +7389,12 @@ async function confirmOpPayment() {
   const id = $('opVerifyModal').dataset.regId;
   if (!id) return;
   try {
+    const regs = await DB.getOpenPlayRegistrations();
+    const reg = regs.find(x => String(x.id) === String(id));
     await DB.updateOpenPlayRegistration(id, { paymentStatus: 'paid' });
+    if (reg?.email) {
+      DB.sendOpenPlayConfirmationEmail({ ...reg, payment_status: 'paid' }, { allowFailure: true }).catch(() => {});
+    }
     closeModal('opVerifyModal');
     toast('✅ Open Play payment confirmed!');
     await renderOpRegistrations();

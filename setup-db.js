@@ -110,6 +110,8 @@ async function run() {
       sql: `CREATE TABLE IF NOT EXISTS public.open_play_registrations (
         id bigserial PRIMARY KEY,
         full_name text NOT NULL,
+        email text,
+        contact_number text,
         court_id text,
         court_name text,
         date date NOT NULL,

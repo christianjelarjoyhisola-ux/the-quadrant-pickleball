@@ -3525,6 +3525,7 @@ let closeHour = 22;
 let openPlayConfig = null; // { enabled, start, end, days[], specificDates[], courtIds[], fee, maxPlayers }
 let openPlayFee = 100; // default ₱100, overridden by settings
 let openPlayMaxPlayers = 40; // default 40, overridden by settings
+let openPlayCourtGroupLabel = '';
 let paymentAcceptanceMode = 'both'; // 'both', 'downpayment_only', 'full_payment_only'
 let _serviceFeeRate = 0; // booking fee amount, loaded from settings
 let _serviceFeeType = 'per_hour'; // 'per_hour' or 'flat'
@@ -4490,6 +4491,18 @@ function getOpenPlaySessionForDate(date, courtId = null) {
   return { start, end, label: `${fmtT(start)} – ${fmtT(end)}` };
 }
 
+function openPlayCourtLabel(courts = []) {
+  const ids = Array.isArray(openPlayConfig?.courtIds) ? openPlayConfig.courtIds.map(String).filter(Boolean) : [];
+  const activeCourts = ids.length
+    ? courts.filter(c => ids.includes(String(c.id)))
+    : courts.filter(c => !c.blocked);
+  const names = activeCourts.map(c => c.name).filter(Boolean);
+  if (names.length === 0) return 'All Open Play Courts';
+  if (names.length === 1) return names[0];
+  if (names.length === 2) return names.join(' + ');
+  return `${names.slice(0, -1).join(' + ')} + ${names[names.length - 1]}`;
+}
+
 function getOpenPlaySessionState(date, session, spotsLeft = 1) {
   if (!session || !date) return 'unavailable';
   if (date < todayStr()) return 'ended';
@@ -4523,7 +4536,7 @@ function courtAvailabilityBadge({ blocked, date, allSlots, curHour, bookedHours,
   return { cls: 'full', text: '⛔ Fully booked' };
 }
 
-function openPlaySessionHtml({ courtId, courtName, date, session, spotsLeft, maxPlayers, compact = false }) {
+function openPlaySessionHtml({ courtId, courtName, courtLabel = '', date, session, spotsLeft, maxPlayers, compact = false }) {
   if (!session) return '';
   const state = getOpenPlaySessionState(date, session, spotsLeft);
   const full = state === 'full';
@@ -4544,9 +4557,10 @@ function openPlaySessionHtml({ courtId, courtName, date, session, spotsLeft, max
       <div class="opb-header">
         <div class="opb-icon">🏓</div>
         <div>
-          <div class="opb-title">Open Play Session</div>
+          <div class="opb-title">Open Play: ${esc(courtLabel || courtName || 'Open Play Courts')}</div>
           <div class="opb-time">${session.label}</div>
           <div class="opb-sub">${fmtD(date)} · ${fmt(openPlayFee)} per player</div>
+          <div class="opb-sub">${esc(courtLabel ? `Shared ${maxPlayers}-player session across ${courtLabel}` : `Shared ${maxPlayers}-player Open Play session`)}</div>
         </div>
       </div>
       <div class="opb-footer">
@@ -6226,6 +6240,7 @@ async function onCardDate(courtId, date, options = {}) {
     openPlayCardHtml = openPlaySessionHtml({
       courtId,
       courtName: c.name,
+      courtLabel: openPlayCourtGroupLabel,
       date,
       session: openPlaySession,
       spotsLeft: opSpotsLeft,
@@ -6290,6 +6305,7 @@ async function renderCourts() {
   const courtsGrid = $('courtsGrid');
   if (!courtsGrid) return;
   syncSharedCourtDateUI(selectedDate);
+  openPlayCourtGroupLabel = openPlayCourtLabel(courts);
   const openPlayTodayByCourt = {};
   courts.forEach(c => {
     const session = getOpenPlaySessionForDate(selectedDate, c.id);
@@ -6340,6 +6356,7 @@ async function renderCourts() {
       ? openPlaySessionHtml({
           courtId: c.id,
           courtName: c.name,
+          courtLabel: openPlayCourtGroupLabel,
           date: selectedDate,
           session: todayOpenPlaySession,
           spotsLeft: todayOpenPlaySpotsLeft,
@@ -6599,6 +6616,7 @@ async function renderSlots() {
     openPlayBlock = openPlaySessionHtml({
       courtId: court.id,
       courtName: court.name,
+      courtLabel: openPlayCourtGroupLabel,
       date,
       session: openPlaySession,
       spotsLeft: opSpotsLeft,
@@ -8043,7 +8061,7 @@ async function openPlaySignup(courtId, date, h, courtName) {
   const sysFee = _serviceFeeRate;
   const opTotal = openPlayFee + sysFee;
   const half = opTotal / 2;
-  $('opModalMeta').textContent = fmtOpenPlayMeta(courtName, date, session.start, session.end);
+  $('opModalMeta').textContent = fmtOpenPlayMeta(openPlayCourtGroupLabel || courtName, date, session.start, session.end);
 
   // Show modal immediately with loading state
   $('opModalBody').innerHTML = `<div class="pb-loader mini" style="padding:32px 0"><div class="pb-ball" aria-hidden="true"></div><div class="pb-loader-txt">Checking availability</div></div>`;

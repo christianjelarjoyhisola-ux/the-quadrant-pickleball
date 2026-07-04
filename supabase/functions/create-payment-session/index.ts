@@ -56,6 +56,19 @@ function extractErrMsg(err: unknown) {
   try { return JSON.stringify(err); } catch { return "Unknown error"; }
 }
 
+function cleanEnvValue(value: string | null | undefined) {
+  return String(value || "").trim().replace(/^['"]+|['"]+$/g, "").trim();
+}
+
+function paymongoKeyDiagnostics(secretKey: string) {
+  const mode = secretKey.startsWith("sk_live_")
+    ? "live"
+    : secretKey.startsWith("sk_test_")
+      ? "test"
+      : "unknown";
+  return `mode=${mode}, length=${secretKey.length}, valid=${/^sk_(live|test)_[A-Za-z0-9]+$/.test(secretKey)}`;
+}
+
 function toNumber(value: unknown, fallback = 0) {
   const n = Number(value);
   return Number.isFinite(n) ? n : fallback;
@@ -195,7 +208,8 @@ function findExpiresAt(obj: unknown): string | null {
 }
 
 async function paymongoRequest(secretKey: string, path: string, init: RequestInit = {}) {
-  const auth = btoa(`${secretKey}:`);
+  const cleanSecretKey = cleanEnvValue(secretKey);
+  const auth = btoa(`${cleanSecretKey}:`);
   const res = await fetch(`https://api.paymongo.com${path}`, {
     ...init,
     headers: {
@@ -205,7 +219,12 @@ async function paymongoRequest(secretKey: string, path: string, init: RequestIni
     },
   });
   const json = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(`PayMongo error ${res.status}: ${extractErrMsg(json)}`);
+  if (!res.ok) {
+    const details = res.status === 401
+      ? `PayMongo key rejected (${paymongoKeyDiagnostics(cleanSecretKey)})`
+      : extractErrMsg(json);
+    throw new Error(`PayMongo error ${res.status}: ${details}`);
+  }
   return json;
 }
 
@@ -466,11 +485,14 @@ Deno.serve(async (req) => {
 
     if (provider !== "paymongo") throw new Error("Only PAYMENT_PROVIDER=paymongo is supported");
 
-    const secretKey = Deno.env.get("PAYMONGO_SECRET_KEY") || "";
-    const successUrl = Deno.env.get("PAYMENT_SUCCESS_URL") || "";
-    const cancelUrl = Deno.env.get("PAYMENT_CANCEL_URL") || "";
+    const secretKey = cleanEnvValue(Deno.env.get("PAYMONGO_SECRET_KEY"));
+    const successUrl = cleanEnvValue(Deno.env.get("PAYMENT_SUCCESS_URL"));
+    const cancelUrl = cleanEnvValue(Deno.env.get("PAYMENT_CANCEL_URL"));
     if (!secretKey) throw new Error("PAYMONGO_SECRET_KEY is missing");
     if (!successUrl || !cancelUrl) throw new Error("PAYMENT_SUCCESS_URL or PAYMENT_CANCEL_URL is missing");
+    if (!/^sk_(live|test)_[A-Za-z0-9]+$/.test(secretKey)) {
+      throw new Error(`PAYMONGO_SECRET_KEY is malformed (${paymongoKeyDiagnostics(secretKey)})`);
+    }
 
     const returnParams = {
       bookingRef,

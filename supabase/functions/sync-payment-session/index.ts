@@ -37,6 +37,14 @@ function extractErrMsg(err: unknown) {
   try { return JSON.stringify(err); } catch { return "Unknown error"; }
 }
 
+function cleanEnvValue(value: string | null | undefined) {
+  return String(value || "").trim().replace(/^['"]+|['"]+$/g, "").trim();
+}
+
+function paymongoAuthHeader(secretKey: string) {
+  return `Basic ${btoa(`${cleanEnvValue(secretKey)}:`)}`;
+}
+
 function normalizeStatus(input?: string) {
   const v = (input || "").toLowerCase();
   if (["paid", "succeeded", "success", "completed"].includes(v)) return "paid";
@@ -70,7 +78,7 @@ async function fetchPayMongoCheckout(secretKey: string, sessionId: string) {
   const res = await fetch(`https://api.paymongo.com/v1/checkout_sessions/${encodeURIComponent(sessionId)}`, {
     method: "GET",
     headers: {
-      Authorization: `Basic ${btoa(`${secretKey}:`)}`,
+      Authorization: paymongoAuthHeader(secretKey),
       "Content-Type": "application/json",
     },
   });
@@ -83,7 +91,7 @@ async function fetchPayMongoPaymentIntent(secretKey: string, paymentIntentId: st
   const res = await fetch(`https://api.paymongo.com/v1/payment_intents/${encodeURIComponent(paymentIntentId)}`, {
     method: "GET",
     headers: {
-      Authorization: `Basic ${btoa(`${secretKey}:`)}`,
+      Authorization: paymongoAuthHeader(secretKey),
       "Content-Type": "application/json",
     },
   });
@@ -147,7 +155,7 @@ Deno.serve(async (req) => {
       Deno.env.get("SERVICE_ROLE_KEY") ||
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ||
       "";
-    const secretKey = Deno.env.get("PAYMONGO_SECRET_KEY") || "";
+    const secretKey = cleanEnvValue(Deno.env.get("PAYMONGO_SECRET_KEY"));
     if (!supabaseUrl) throw new Error("Missing SUPABASE_URL");
     if (!serviceRoleKey) throw new Error("Missing SERVICE_ROLE_KEY");
     if (!secretKey) throw new Error("Missing PAYMONGO_SECRET_KEY");

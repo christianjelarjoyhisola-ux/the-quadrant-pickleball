@@ -7239,11 +7239,30 @@ async function renderOpRegistrations() {
   const el = $('opRegList');
   if (!el) return;
   el.innerHTML = '<div class="pb-loader"><div class="pb-ball" aria-hidden="true"></div><div class="pb-loader-txt">Loading registrations</div></div>';
-  let regs = await DB.getOpenPlayRegistrations();
+  const [settings, courts, allRegs] = await Promise.all([
+    DB.getSettings(),
+    DB.getCourts(),
+    DB.getOpenPlayRegistrations(),
+  ]);
+  let cfg = {};
+  try { cfg = settings.open_play_config ? JSON.parse(settings.open_play_config) : {}; } catch (_) { cfg = {}; }
+  const openPlayCourtLabel = (() => {
+    const ids = Array.isArray(cfg.courtIds) ? cfg.courtIds.map(String).filter(Boolean) : [];
+    const activeCourts = ids.length
+      ? courts.filter(c => ids.includes(String(c.id)))
+      : courts.filter(c => !c.blocked);
+    const names = activeCourts.map(c => c.name).filter(Boolean);
+    if (names.length === 0) return 'Open Play Courts';
+    if (names.length === 1) return names[0];
+    if (names.length === 2) return names.join(' + ');
+    return `${names.slice(0, -1).join(' + ')} + ${names[names.length - 1]}`;
+  })();
+  let regs = allRegs;
   const filterDate = $('opRegDate')?.value;
   const filterCourt = $('opRegCourt')?.value;
   if (filterDate) regs = regs.filter(r => r.date === filterDate);
   if (filterCourt) regs = regs.filter(r => String(r.court_id) === String(filterCourt));
+  regs = regs.map(r => ({ ...r, court_name: openPlayCourtLabel }));
   if (regs.length === 0) {
     el.innerHTML = '<p style="color:var(--muted);font-style:italic">No Open Play reservations found.</p>';
     return;
@@ -7310,9 +7329,14 @@ async function deleteOpReg(id) {
 }
 
 async function openOpVerifyModal(id) {
-  const regs = await DB.getOpenPlayRegistrations();
+  const [regs, settings, courts] = await Promise.all([DB.getOpenPlayRegistrations(), DB.getSettings(), DB.getCourts()]);
   const r = regs.find(x => String(x.id) === String(id));
   if (!r) { toast('Registration not found.', 'err'); return; }
+  let cfg = {};
+  try { cfg = settings.open_play_config ? JSON.parse(settings.open_play_config) : {}; } catch (_) { cfg = {}; }
+  const ids = Array.isArray(cfg.courtIds) ? cfg.courtIds.map(String).filter(Boolean) : [];
+  const names = (ids.length ? courts.filter(c => ids.includes(String(c.id))) : courts.filter(c => !c.blocked)).map(c => c.name).filter(Boolean);
+  const opCourtLabel = names.length <= 1 ? (names[0] || r.court_name || 'Open Play Courts') : names.join(' + ');
   const methodLabel = { gcash: 'GCash', bdopay: 'BDO Pay', maya: 'Maya', gotyme: 'GoTyme', pnb: 'PNB', cash: 'Cash' };
   $('ovMethod').textContent  = methodLabel[r.payment_method] || r.payment_method || 'GCash';
   $('ovGcashRef').textContent = r.gcash_ref || '—';
@@ -7321,6 +7345,7 @@ async function openOpVerifyModal(id) {
   $('ovDate').textContent    = `${fmtD(r.date)} · ${r.time_label || '—'}`;
   $('ovPayType').textContent = r.payment_type || '—';
   $('ovAmount').textContent  = '₱' + Number(r.amount).toLocaleString('en-PH', { minimumFractionDigits: 2 });
+  $('ovCourt').textContent   = opCourtLabel;
   await ovPopulateReceipt(r);
   $('opVerifyModal').dataset.regId = id;
   $('opVerifyModal').classList.add('show');

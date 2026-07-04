@@ -3489,7 +3489,7 @@ body.light #splashScreen { background: #071320; }
         <img id="qrphPayImg" alt="QRPh payment code" />
       </div>
       <div class="qrph-pay-meta">
-        <div class="qrph-pay-row"><span>Court / Slot</span><strong id="qrphPaySlot">-</strong></div>
+        <div class="qrph-pay-row"><span id="qrphPaySlotLabel">Court / Slot</span><strong id="qrphPaySlot">-</strong></div>
         <div class="qrph-pay-row"><span>Expires in</span><strong id="qrphPayCountdown">30:00</strong></div>
       </div>
       <div class="qrph-pay-note">
@@ -4959,8 +4959,13 @@ function qrphSessionAmount(session, booking) {
 }
 
 function qrphSlotSummary(booking) {
+  const isOpenPlay = String(booking?.ref || '').startsWith('OP-');
   const date = booking?.date ? fmtDc(booking.date) : '';
   const slot = booking?.timeLabel || `${booking?.startTime || ''} - ${booking?.endTime || ''}`.trim();
+  if (isOpenPlay) {
+    const courts = booking?.courtLabel || openPlayCourtGroupLabel || booking?.courtName || 'Open Play Courts';
+    return [courts, date, slot].filter(Boolean).join(' | ') || 'Open Play Session';
+  }
   return [booking?.courtName, date, slot].filter(Boolean).join(' | ') || 'The Quadrant';
 }
 
@@ -5060,6 +5065,7 @@ function showQrphPaymentModal(booking, session, itemBookings = []) {
 
   if ($('qrphPayRef')) $('qrphPayRef').textContent = booking.ref;
   if ($('qrphPayAmount')) $('qrphPayAmount').textContent = fmt(qrphSessionAmount(session, booking));
+  if ($('qrphPaySlotLabel')) $('qrphPaySlotLabel').textContent = String(booking?.ref || '').startsWith('OP-') ? 'Open Play Session' : 'Court / Slot';
   if ($('qrphPaySlot')) $('qrphPaySlot').textContent = qrphSlotSummary(booking);
   if ($('qrphPayImg')) $('qrphPayImg').src = qrImage;
   setQrphPaymentStatus('Waiting for payment...', 'waiting');
@@ -8612,6 +8618,7 @@ async function submitOpenPlay() {
           ref: `OP-${registration.id}`,
           fullName: name,
           courtName: _opSignupData.courtName,
+          courtLabel: openPlayCourtGroupLabel || _opSignupData.courtName,
           date: _opSignupData.date,
           timeLabel,
           downpayment: amt,

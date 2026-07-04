@@ -8570,22 +8570,30 @@ async function submitOpenPlay() {
     }, { allowFailure: true }).catch(() => {});
 
     if (qrphCheckout) {
-      const session = await createOpenPlayPaymentSession(registration, {
-        fullName: name,
-        courtName: _opSignupData.courtName,
-        date: _opSignupData.date,
-        sessionLabel: timeLabel,
-      });
-      const qrBooking = {
-        ref: `OP-${registration.id}`,
-        fullName: name,
-        courtName: _opSignupData.courtName,
-        date: _opSignupData.date,
-        timeLabel,
-        downpayment: amt,
-        total: amt,
-      };
-      if (showQrphPaymentModal(qrBooking, session, [])) return;
+      try {
+        const session = await createOpenPlayPaymentSession(registration, {
+          fullName: name,
+          courtName: _opSignupData.courtName,
+          date: _opSignupData.date,
+          sessionLabel: timeLabel,
+        });
+        const qrBooking = {
+          ref: `OP-${registration.id}`,
+          fullName: name,
+          courtName: _opSignupData.courtName,
+          date: _opSignupData.date,
+          timeLabel,
+          downpayment: amt,
+          total: amt,
+        };
+        if (!showQrphPaymentModal(qrBooking, session, [])) {
+          throw new Error('PayMongo did not return a QRPh image. Please try again.');
+        }
+        return;
+      } catch (qrErr) {
+        await DB.updateOpenPlayRegistration(registration.id, { paymentStatus: 'rejected' }).catch(() => {});
+        throw qrErr;
+      }
     }
 
     $('opModalBody').innerHTML = `

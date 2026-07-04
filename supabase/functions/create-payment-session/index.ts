@@ -493,6 +493,9 @@ Deno.serve(async (req) => {
       providerName = "paymongo_qrph";
       paymongoRaw = out.raw;
     } catch (qrErr) {
+      if (isOpenPlay) {
+        throw new Error(`QRPh code could not be generated: ${extractErrMsg(qrErr)}`);
+      }
       const out = await createPayMongoCheckoutSession({
         secretKey,
         amountPhp,

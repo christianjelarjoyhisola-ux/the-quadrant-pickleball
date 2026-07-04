@@ -136,6 +136,11 @@ function parseWebhook(body: WebhookBody) {
   return { sessionId, bookingRef, providerRef, normalized, paidAtIso };
 }
 
+function openPlayIdFromRef(ref: string | null) {
+  const match = String(ref || "").match(/^OP-(\d+)$/i);
+  return match ? match[1] : "";
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return new Response("Method not allowed", { status: 405, headers: corsHeaders });
@@ -206,23 +211,31 @@ Deno.serve(async (req) => {
     }
 
     if (bookingRefToUpdate) {
-      const bookingUpdate: Record<string, unknown> = {
-        payment_status: normalized,
-      };
-      if (normalized === "paid") {
-        bookingUpdate.status = "confirmed";
-        bookingUpdate.paid_at = paidAtIso;
-      }
-      if (normalized === "failed") bookingUpdate.status = "cancelled";
-      const { data: bookingRow } = await db
-        .from("bookings")
-        .select("ref,booking_group_ref")
-        .eq("ref", bookingRefToUpdate)
-        .single();
-      if (bookingRow?.booking_group_ref) {
-        await db.from("bookings").update(bookingUpdate).eq("booking_group_ref", bookingRow.booking_group_ref);
+      const openPlayRegistrationId = openPlayIdFromRef(bookingRefToUpdate);
+      if (openPlayRegistrationId) {
+        await db
+          .from("open_play_registrations")
+          .update({ payment_status: normalized === "paid" ? "paid" : normalized === "failed" ? "rejected" : "pending" })
+          .eq("id", openPlayRegistrationId);
       } else {
-        await db.from("bookings").update(bookingUpdate).eq("ref", bookingRefToUpdate);
+        const bookingUpdate: Record<string, unknown> = {
+          payment_status: normalized,
+        };
+        if (normalized === "paid") {
+          bookingUpdate.status = "confirmed";
+          bookingUpdate.paid_at = paidAtIso;
+        }
+        if (normalized === "failed") bookingUpdate.status = "cancelled";
+        const { data: bookingRow } = await db
+          .from("bookings")
+          .select("ref,booking_group_ref")
+          .eq("ref", bookingRefToUpdate)
+          .single();
+        if (bookingRow?.booking_group_ref) {
+          await db.from("bookings").update(bookingUpdate).eq("booking_group_ref", bookingRow.booking_group_ref);
+        } else {
+          await db.from("bookings").update(bookingUpdate).eq("ref", bookingRefToUpdate);
+        }
       }
     }
 

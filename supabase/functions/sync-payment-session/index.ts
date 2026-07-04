@@ -22,6 +22,11 @@ type BookingRow = {
   payment_status: string | null;
 };
 
+function openPlayIdFromRef(ref: string) {
+  const match = String(ref || "").match(/^OP-(\d+)$/i);
+  return match ? match[1] : "";
+}
+
 function extractErrMsg(err: unknown) {
   if (typeof err === "string") return err;
   if (err && typeof err === "object") {
@@ -114,6 +119,15 @@ async function updateBookingPayment(db: any, booking: BookingRow, normalized: st
   }
 }
 
+async function updateOpenPlayPayment(db: any, registrationId: string, normalized: string) {
+  const status = normalized === "paid" ? "paid" : normalized === "failed" ? "rejected" : "pending";
+  const { error } = await db
+    .from("open_play_registrations")
+    .update({ payment_status: status })
+    .eq("id", registrationId);
+  if (error) throw error;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (req.method !== "POST") return new Response("Method not allowed", { status: 405, headers: corsHeaders });
@@ -139,18 +153,38 @@ Deno.serve(async (req) => {
     if (!secretKey) throw new Error("Missing PAYMONGO_SECRET_KEY");
 
     const db = createClient(supabaseUrl, serviceRoleKey);
+    const openPlayRegistrationId = openPlayIdFromRef(bookingRef);
 
-    const { data: booking, error: bookingErr } = await db
-      .from("bookings")
-      .select("ref,booking_group_ref,payment_status")
-      .eq("ref", bookingRef)
-      .maybeSingle();
-    if (bookingErr) throw bookingErr;
-    if (!booking) {
-      return new Response(JSON.stringify({ error: "Booking not found" }), {
-        status: 404,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
+    let booking: BookingRow | null = null;
+    let openPlayStatus = "pending";
+    if (openPlayRegistrationId) {
+      const { data: reg, error: regErr } = await db
+        .from("open_play_registrations")
+        .select("id,payment_status")
+        .eq("id", openPlayRegistrationId)
+        .maybeSingle();
+      if (regErr) throw regErr;
+      if (!reg) {
+        return new Response(JSON.stringify({ error: "Open Play registration not found" }), {
+          status: 404,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      openPlayStatus = String(reg.payment_status || "pending");
+    } else {
+      const { data: bookingData, error: bookingErr } = await db
+        .from("bookings")
+        .select("ref,booking_group_ref,payment_status")
+        .eq("ref", bookingRef)
+        .maybeSingle();
+      if (bookingErr) throw bookingErr;
+      if (!bookingData) {
+        return new Response(JSON.stringify({ error: "Booking not found" }), {
+          status: 404,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      booking = bookingData as BookingRow;
     }
 
     const { data: session, error: sessionErr } = await db
@@ -162,7 +196,7 @@ Deno.serve(async (req) => {
       .maybeSingle();
     if (sessionErr) throw sessionErr;
     if (!session?.provider_reference) {
-      return new Response(JSON.stringify({ ok: true, paid: false, status: booking.payment_status || "pending", reason: "No PayMongo session yet" }), {
+      return new Response(JSON.stringify({ ok: true, paid: false, status: openPlayRegistrationId ? openPlayStatus : booking?.payment_status || "pending", reason: "No PayMongo session yet" }), {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -186,7 +220,8 @@ Deno.serve(async (req) => {
     if (paymentErr) throw paymentErr;
 
     if (normalized === "paid" || normalized === "failed") {
-      await updateBookingPayment(db, booking as BookingRow, normalized, paidAt);
+      if (openPlayRegistrationId) await updateOpenPlayPayment(db, openPlayRegistrationId, normalized);
+      else await updateBookingPayment(db, booking as BookingRow, normalized, paidAt);
     }
 
     return new Response(JSON.stringify({
@@ -194,6 +229,7 @@ Deno.serve(async (req) => {
       paid: normalized === "paid",
       status: normalized,
       bookingRef,
+      openPlayRegistrationId: openPlayRegistrationId || null,
       providerReference: (session as PaymentSessionRow).provider_reference,
     }), {
       status: 200,

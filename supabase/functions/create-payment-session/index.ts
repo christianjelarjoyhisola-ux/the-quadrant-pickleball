@@ -1,7 +1,8 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 type CreatePayload = {
-  bookingRef: string;
+  bookingRef?: string;
+  openPlayRegistrationId?: string | number;
   amountPhp?: number;
   customer?: {
     name?: string;
@@ -28,6 +29,16 @@ type BookingRow = {
 type CourtRow = {
   rate: number | null;
   rate_schedule: Array<{ from: number; to: number; rate: number }> | null;
+};
+
+type OpenPlayRegistrationRow = {
+  id: string | number;
+  full_name: string | null;
+  amount: number | null;
+  payment_status: string | null;
+  date: string | null;
+  court_name: string | null;
+  time_label: string | null;
 };
 
 const corsHeaders = {
@@ -356,28 +367,12 @@ Deno.serve(async (req) => {
     const db = createClient(supabaseUrl, serviceRoleKey);
 
     const body = (await req.json()) as CreatePayload;
-    const bookingRef = String(body.bookingRef || "").trim();
-    if (!bookingRef) {
+    const openPlayRegistrationId = String(body.openPlayRegistrationId || "").trim();
+    let bookingRef = String(body.bookingRef || "").trim();
+    const isOpenPlay = !!openPlayRegistrationId && !bookingRef;
+    if (!bookingRef && !isOpenPlay) {
       return new Response(JSON.stringify({ error: "Invalid payload" }), {
         status: 400,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-
-    const { data: booking, error: bookingErr } = await db
-      .from("bookings")
-      .select("ref,booking_group_ref,full_name,email,contact_number,court_id,slots,total,downpayment,status,payment_status")
-      .eq("ref", bookingRef)
-      .single();
-    if (bookingErr || !booking) {
-      return new Response(JSON.stringify({ error: "Booking not found" }), {
-        status: 404,
-        headers: { ...corsHeaders, "Content-Type": "application/json" },
-      });
-    }
-    if (booking.status === "cancelled" || booking.payment_status === "paid" || booking.payment_status === "downpayment_paid") {
-      return new Response(JSON.stringify({ error: "Booking is not payable" }), {
-        status: 409,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -385,21 +380,82 @@ Deno.serve(async (req) => {
     const { data: settingRows, error: settingsErr } = await db.from("settings").select("key,value");
     if (settingsErr) throw settingsErr;
     const settings = settingMap(settingRows as Array<{ key: string; value: string }>);
-    const bookingGroup = await loadBookingGroup(db, booking as BookingRow);
-    const amounts = await expectedBookingGroupAmounts(db, bookingGroup, settings);
 
     const sessionId = crypto.randomUUID();
-    const amountPhp = amounts.due;
-    const customer = {
-      name: body.customer?.name || booking.full_name || "Customer",
-      email: body.customer?.email || booking.email || "",
-      phone: body.customer?.phone || booking.contact_number || "",
-    };
-    const metadata = {
-      ...(body.metadata || {}),
-      booking_ref: bookingRef,
-      ...(booking.booking_group_ref ? { booking_group_ref: booking.booking_group_ref } : {}),
-    };
+    let amountPhp = 0;
+    let customer = { name: body.customer?.name || "Customer", email: body.customer?.email || "", phone: body.customer?.phone || "" };
+    let metadata: Record<string, string> = { ...(body.metadata || {}) };
+    let booking: BookingRow | null = null;
+    let bookingGroupRef = "";
+
+    if (isOpenPlay) {
+      const { data: reg, error: regErr } = await db
+        .from("open_play_registrations")
+        .select("id,full_name,amount,payment_status,date,court_name,time_label")
+        .eq("id", openPlayRegistrationId)
+        .single();
+      if (regErr || !reg) {
+        return new Response(JSON.stringify({ error: "Open Play registration not found" }), {
+          status: 404,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const openPlay = reg as OpenPlayRegistrationRow;
+      if (openPlay.payment_status === "paid") {
+        return new Response(JSON.stringify({ error: "Open Play registration is already paid" }), {
+          status: 409,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      bookingRef = `OP-${openPlayRegistrationId}`;
+      amountPhp = roundMoney(toNumber(openPlay.amount));
+      if (amountPhp <= 0) throw new Error("Open Play amount is invalid");
+      customer = {
+        name: body.customer?.name || openPlay.full_name || "Open Play Player",
+        email: body.customer?.email || "",
+        phone: body.customer?.phone || "",
+      };
+      metadata = {
+        ...metadata,
+        payment_type: "open_play",
+        open_play_registration_id: String(openPlayRegistrationId),
+        booking_ref: bookingRef,
+      };
+    } else {
+      const { data: bookingData, error: bookingErr } = await db
+        .from("bookings")
+        .select("ref,booking_group_ref,full_name,email,contact_number,court_id,slots,total,downpayment,status,payment_status")
+        .eq("ref", bookingRef)
+        .single();
+      if (bookingErr || !bookingData) {
+        return new Response(JSON.stringify({ error: "Booking not found" }), {
+          status: 404,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      booking = bookingData as BookingRow;
+      if (booking.status === "cancelled" || booking.payment_status === "paid" || booking.payment_status === "downpayment_paid") {
+        return new Response(JSON.stringify({ error: "Booking is not payable" }), {
+          status: 409,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const bookingGroup = await loadBookingGroup(db, booking);
+      const amounts = await expectedBookingGroupAmounts(db, bookingGroup, settings);
+      amountPhp = amounts.due;
+      customer = {
+        name: body.customer?.name || booking.full_name || "Customer",
+        email: body.customer?.email || booking.email || "",
+        phone: body.customer?.phone || booking.contact_number || "",
+      };
+      bookingGroupRef = booking.booking_group_ref || "";
+      metadata = {
+        ...metadata,
+        payment_type: "booking",
+        booking_ref: bookingRef,
+        ...(booking.booking_group_ref ? { booking_group_ref: booking.booking_group_ref } : {}),
+      };
+    }
 
     let checkoutUrl = "";
     let qrImageUrl = "";
@@ -418,7 +474,8 @@ Deno.serve(async (req) => {
 
     const returnParams = {
       bookingRef,
-      ...(booking.booking_group_ref ? { groupRef: booking.booking_group_ref } : {}),
+      ...(bookingGroupRef ? { groupRef: bookingGroupRef } : {}),
+      ...(isOpenPlay ? { openPlayRegistrationId } : {}),
     };
 
     try {
@@ -468,16 +525,24 @@ Deno.serve(async (req) => {
     const { error: sessErr } = await db.from("payment_sessions").insert(paymentRow);
     if (sessErr) throw sessErr;
 
-    const bookingUpdate = {
-      payment_status: "pending",
-      payment_provider: providerName,
-      payment_session_id: sessionId,
-      payment_checkout_url: checkoutUrl,
-    };
-    const { error: bErr } = booking.booking_group_ref
-      ? await db.from("bookings").update(bookingUpdate).eq("booking_group_ref", booking.booking_group_ref).neq("status", "cancelled")
-      : await db.from("bookings").update(bookingUpdate).eq("ref", bookingRef);
-    if (bErr) throw bErr;
+    if (isOpenPlay) {
+      const { error: opErr } = await db
+        .from("open_play_registrations")
+        .update({ payment_status: "pending" })
+        .eq("id", openPlayRegistrationId);
+      if (opErr) throw opErr;
+    } else if (booking) {
+      const bookingUpdate = {
+        payment_status: "pending",
+        payment_provider: providerName,
+        payment_session_id: sessionId,
+        payment_checkout_url: checkoutUrl,
+      };
+      const { error: bErr } = booking.booking_group_ref
+        ? await db.from("bookings").update(bookingUpdate).eq("booking_group_ref", booking.booking_group_ref).neq("status", "cancelled")
+        : await db.from("bookings").update(bookingUpdate).eq("ref", bookingRef);
+      if (bErr) throw bErr;
+    }
 
     return new Response(JSON.stringify({
       ok: true,
@@ -489,6 +554,7 @@ Deno.serve(async (req) => {
       expiresAt,
       amountPhp,
       bookingRef,
+      openPlayRegistrationId: isOpenPlay ? openPlayRegistrationId : null,
     }), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },

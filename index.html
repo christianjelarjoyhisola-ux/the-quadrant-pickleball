@@ -4911,6 +4911,24 @@ async function createSecurePaymentSession(booking) {
   return DB.createPaymentSession(payload);
 }
 
+async function createOpenPlayPaymentSession(registration, signupData = {}) {
+  const payload = {
+    openPlayRegistrationId: registration.id,
+    customer: {
+      name: signupData.fullName || registration.full_name || registration.fullName || 'Open Play Player',
+      email: '',
+      phone: '',
+    },
+    metadata: {
+      payment_type: 'open_play',
+      court: signupData.courtName || registration.court_name || '',
+      date: signupData.date || registration.date || '',
+      timeLabel: signupData.sessionLabel || registration.time_label || '',
+    },
+  };
+  return DB.createPaymentSession(payload);
+}
+
 function goToCheckout(checkoutUrl) {
   if (!checkoutUrl) return false;
   toast('Opening secure QRPh checkout...', 'ok');
@@ -4965,6 +4983,10 @@ function closeQrphPaymentModal(showPendingInvoice = true) {
   qrphPaymentState.timer = null;
   qrphPaymentState.countdownTimer = null;
   if (showPendingInvoice && booking) {
+    if (String(booking?.ref || '').startsWith('OP-')) {
+      toast('Open Play spot is pending QRPh payment.', 'inf');
+      return;
+    }
     showInvoice(booking);
     resetForm();
     toast('Booking is pending QRPh payment.', 'inf');
@@ -4973,6 +4995,12 @@ function closeQrphPaymentModal(showPendingInvoice = true) {
 
 async function completeQrphPaidBooking(booking) {
   closeQrphPaymentModal(false);
+  if (String(booking?.ref || '').startsWith('OP-')) {
+    closeOpModal();
+    toast('QRPh payment received. Open Play spot confirmed.', 'ok');
+    await renderCourts();
+    return;
+  }
   const fresh = await DB.getBookingByRef(booking.ref).catch(() => null);
   const paidBooking = { ...(fresh || booking), paymentStatus: 'paid', status: 'confirmed', paidAt: (fresh || booking)?.paidAt || new Date().toISOString() };
   showInvoice(paidBooking);
@@ -7999,6 +8027,7 @@ function closeGrandSplash() {
 let _opSignupData = { courtId: null, courtName: '', date: '', hour: 0, sessionEnd: 0, sessionLabel: '', fullPay: false, payMethod: 'gcash', gcashRef: '', startedAt: null };
 
 function firstEnabledPaymentMethod() {
+  if (isPayMongoCheckoutAvailable()) return 'gcash';
   return ALL_PAYMENT_METHODS.find(m => paymentMethods[m]) || '';
 }
 
@@ -8049,7 +8078,10 @@ async function openPlaySignup(courtId, date, h, courtName) {
     $('opModalFt').innerHTML = `<button class="btn btn-g" style="width:100%;justify-content:center" onclick="closeOpModal()">Got it</button>`;
     return;
   }
-  const payOptList = [
+  const checkoutMode = isPayMongoCheckoutAvailable();
+  const payOptList = checkoutMode ? [
+    `<div class="pay-opt op-pay-opt on" data-m="gcash" onclick="opPickPay('gcash')"><span class="po-ico">QR</span><span class="po-lbl">QRPh</span><span class="po-sub">Auto-confirmed by PayMongo</span></div>`
+  ] : [
     paymentMethods.gcash   ? `<div class="pay-opt op-pay-opt ${defaultPayMethod === 'gcash' ? 'on' : ''}" data-m="gcash"   onclick="opPickPay('gcash')"><span class="po-ico">📱</span><span class="po-lbl">GCash</span><span class="po-sub">Scan QR · send ref #</span></div>` : '',
     paymentMethods.bdopay  ? `<div class="pay-opt op-pay-opt ${defaultPayMethod === 'bdopay' ? 'on' : ''}" data-m="bdopay"  onclick="opPickPay('bdopay')"><span class="po-ico">🏦</span><span class="po-lbl">BDO Pay</span><span class="po-sub">InstaPay to GCash QR</span></div>` : '',
     paymentMethods.maya    ? `<div class="pay-opt op-pay-opt ${defaultPayMethod === 'maya' ? 'on' : ''}" data-m="maya"    onclick="opPickPay('maya')"><span class="po-ico">M</span><span class="po-lbl">Maya</span><span class="po-sub">QRPh to GCash</span></div>` : '',
@@ -8112,7 +8144,7 @@ async function openPlaySignup(courtId, date, h, courtName) {
       </div>
       <label class="booking-policy-check op-policy-check">
         <input type="checkbox" id="opPolicyAgree" />
-        <span><strong>I agree</strong> that Open Play payments are non-refundable, my reference and receipt must be correct, and invalid or missing proof may reject this registration.</span>
+        <span><strong>I agree</strong> that Open Play payments are non-refundable and ${checkoutMode ? 'my QRPh payment must be completed within 15 minutes to keep my spot.' : 'my payment details and receipt must be correct.'}</span>
       </label>
     </div>`;
   $('opModalFt').innerHTML = `
@@ -8151,13 +8183,26 @@ function openPlayDpControlsHtml(opTotal) {
 }
 
 function opPickPay(method) {
-  if (!paymentMethods[method]) return;
+  if (!paymentMethods[method] && !(method === 'gcash' && isPayMongoCheckoutAvailable())) return;
   _opSignupData.payMethod = method;
   document.querySelectorAll('#opPayOpts .pay-opt').forEach(el => el.classList.toggle('on', el.dataset.m === method));
   const info = $('opPayInfo');
   if (!info) return;
   const opTotal = openPlayFee + _serviceFeeRate;
   const amt = _opSignupData.fullPay ? opTotal : opTotal / 2;
+  if (isPayMongoCheckoutAvailable() && method === 'gcash') {
+    const dpControlsHtml = openPlayDpControlsHtml(opTotal);
+    info.innerHTML = `
+      <div class="op-payment-combo">
+        ${dpControlsHtml}
+        <div class="op-cash-card">
+          <div class="op-send-title">QRPh Payment</div>
+          <div style="margin-top:4px">After you join, a secure QRPh code will appear here.</div>
+          <div style="margin-top:8px">Pay <strong style="color:var(--gold)">${fmt(amt)}</strong> within <strong>15 minutes</strong> to confirm your Open Play spot.</div>
+        </div>
+      </div>`;
+    return;
+  }
   const cleanRef = normalizePaymentRef(_opSignupData.gcashRef || '', method);
   _opSignupData.gcashRef = cleanRef;
   const refCountText = method === 'gcash'
@@ -8383,7 +8428,8 @@ async function submitOpenPlay() {
     return;
   }
   const payMethod = _opSignupData.payMethod;
-  const needsRef = isDigitalPayMethod(payMethod);
+  const qrphCheckout = payMethod === 'gcash' && isPayMongoCheckoutAvailable();
+  const needsRef = isDigitalPayMethod(payMethod) && !qrphCheckout;
   // Sync ref from input in case oninput didn't fire
   const refEl = $('opGcashRef');
   if (refEl) {
@@ -8396,19 +8442,19 @@ async function submitOpenPlay() {
     refEl?.focus();
     return;
   }
-  if (payMethod === 'gcash' && !isGcashRefValid(_opSignupData.gcashRef)) {
+  if (needsRef && payMethod === 'gcash' && !isGcashRefValid(_opSignupData.gcashRef)) {
     if (refEl) refEl.style.borderColor = 'var(--red)';
     toast('GCash reference number must be exactly 13 digits.', 'err');
     refEl?.focus();
     return;
   }
-  if (payMethod === 'bdopay' && !isBdoPayRefValid(_opSignupData.gcashRef)) {
+  if (needsRef && payMethod === 'bdopay' && !isBdoPayRefValid(_opSignupData.gcashRef)) {
     if (refEl) refEl.style.borderColor = 'var(--red)';
     toast('BDO Pay reference must look like BN-YYYYMMDD-########. Do not enter the invoice number.', 'err');
     refEl?.focus();
     return;
   }
-  if (payMethod === 'maya' && !isMayaRefValid(_opSignupData.gcashRef)) {
+  if (needsRef && payMethod === 'maya' && !isMayaRefValid(_opSignupData.gcashRef)) {
     if (refEl) refEl.style.borderColor = 'var(--red)';
     toast('Maya Reference ID must look like B6DC F633 F08C. Do not enter the InstaPay Ref. No.', 'err');
     refEl?.focus();
@@ -8490,7 +8536,7 @@ async function submitOpenPlay() {
       regPayStatus = receiptResult.status === 'auto_approved' ? 'paid' : 'pending';
     }
     const timeLabel = _opSignupData.sessionLabel || `${fmtT(_opSignupData.hour)} – ${fmtT(_opSignupData.hour + 1)}`;
-    await DB.addOpenPlayRegistration({
+    const registration = await DB.addOpenPlayRegistration({
       fullName: name,
       courtId: _opSignupData.courtId,
       courtName: _opSignupData.courtName,
@@ -8522,6 +8568,25 @@ async function submitOpenPlay() {
       paymentType: payType,
       amount: amt,
     }, { allowFailure: true }).catch(() => {});
+
+    if (qrphCheckout) {
+      const session = await createOpenPlayPaymentSession(registration, {
+        fullName: name,
+        courtName: _opSignupData.courtName,
+        date: _opSignupData.date,
+        sessionLabel: timeLabel,
+      });
+      const qrBooking = {
+        ref: `OP-${registration.id}`,
+        fullName: name,
+        courtName: _opSignupData.courtName,
+        date: _opSignupData.date,
+        timeLabel,
+        downpayment: amt,
+        total: amt,
+      };
+      if (showQrphPaymentModal(qrBooking, session, [])) return;
+    }
 
     $('opModalBody').innerHTML = `
       <div style="text-align:center;padding:28px 0">

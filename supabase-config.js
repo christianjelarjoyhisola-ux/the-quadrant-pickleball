@@ -662,7 +662,7 @@ window.DB = {
   },
 
   async addOpenPlayRegistration(reg) {
-    const { error } = await _sb.from('open_play_registrations').insert({
+    const { data, error } = await _sb.from('open_play_registrations').insert({
       full_name: reg.fullName,
       court_id: String(reg.courtId),
       court_name: reg.courtName,
@@ -682,10 +682,11 @@ window.DB = {
       receipt_extracted: reg.receiptExtracted || null,
       receipt_confidence: reg.receiptConfidence ?? null,
       receipt_verified_at: reg.receiptVerifiedAt || null,
-      created_at: new Date().toISOString(),
-    });
+      created_at: reg.createdAt || new Date().toISOString(),
+    }).select('*').single();
     if (error) { console.error('addOpenPlayRegistration:', error); throw error; }
     _pbClearFastCache(['openPlayRegistrations', 'openPlayCount', 'openPlayCounts']);
+    return data;
   },
 
   async updateOpenPlayRegistration(id, updates) {
@@ -707,10 +708,11 @@ window.DB = {
 
   async getOpenPlayCountForDate(date, courtId = null) {
     return _pbCached('openPlayCount', { date, courtId: courtId || '' }, PB_FAST_CACHE_MS.openPlay, async () => {
+      const cutoffIso = new Date(Date.now() - PB_RESERVATION_HOLD_MINUTES * 60 * 1000).toISOString();
       let query = _sb.from('open_play_registrations')
-        .select('*', { count: 'exact', head: true })
+        .select('id', { count: 'exact', head: true })
         .eq('date', date)
-        .or('payment_status.is.null,payment_status.neq.rejected');
+        .or(`payment_status.eq.paid,and(payment_status.eq.pending,created_at.gte.${cutoffIso}),payment_status.is.null`);
       if (courtId) query = query.eq('court_id', String(courtId));
       const { count, error } = await query;
       if (error) { console.error('getOpenPlayCountForDate:', error); return 0; }
@@ -720,10 +722,11 @@ window.DB = {
 
   async getOpenPlayCountsForDate(date) {
     return _pbCached('openPlayCounts', { date }, PB_FAST_CACHE_MS.openPlay, async () => {
+      const cutoffIso = new Date(Date.now() - PB_RESERVATION_HOLD_MINUTES * 60 * 1000).toISOString();
       const { data, error } = await _sb.from('open_play_registrations')
         .select('court_id')
         .eq('date', date)
-        .or('payment_status.is.null,payment_status.neq.rejected');
+        .or(`payment_status.eq.paid,and(payment_status.eq.pending,created_at.gte.${cutoffIso}),payment_status.is.null`);
       if (error) { console.error('getOpenPlayCountsForDate:', error); return {}; }
       return (data || []).reduce((counts, row) => {
         const key = String(row.court_id || '');
@@ -1464,7 +1467,7 @@ window.DB = {
     },
     async addOpenPlayRegistration(reg) {
       const db = readDb();
-      db.openPlayRegistrations.push({
+      const row = {
         id: localRef('op'),
         full_name: reg.fullName,
         court_id: String(reg.courtId),
@@ -1485,9 +1488,11 @@ window.DB = {
         receipt_extracted: reg.receiptExtracted || null,
         receipt_confidence: reg.receiptConfidence ?? null,
         receipt_verified_at: reg.receiptVerifiedAt || null,
-        created_at: nowIso(),
-      });
+        created_at: reg.createdAt || nowIso(),
+      };
+      db.openPlayRegistrations.push(row);
       writeDb(db);
+      return row;
     },
     async updateOpenPlayRegistration(id, updates) {
       const db = readDb();
@@ -1510,15 +1515,25 @@ window.DB = {
       writeDb(db);
     },
     async getOpenPlayCountForDate(date, courtId = null) {
+      const cutoff = Date.now() - PB_RESERVATION_HOLD_MINUTES * 60 * 1000;
       return readDb().openPlayRegistrations.filter(r =>
         r.date === date &&
         (!courtId || String(r.court_id) === String(courtId)) &&
-        r.payment_status !== 'rejected'
+        (
+          r.payment_status === 'paid' ||
+          !r.payment_status ||
+          (r.payment_status === 'pending' && (!r.created_at || new Date(r.created_at).getTime() >= cutoff))
+        )
       ).length;
     },
     async getOpenPlayCountsForDate(date) {
+      const cutoff = Date.now() - PB_RESERVATION_HOLD_MINUTES * 60 * 1000;
       return readDb().openPlayRegistrations
-        .filter(r => r.date === date && r.payment_status !== 'rejected')
+        .filter(r => r.date === date && (
+          r.payment_status === 'paid' ||
+          !r.payment_status ||
+          (r.payment_status === 'pending' && (!r.created_at || new Date(r.created_at).getTime() >= cutoff))
+        ))
         .reduce((counts, row) => {
           const key = String(row.court_id || '');
           counts[key] = (counts[key] || 0) + 1;

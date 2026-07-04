@@ -136,7 +136,7 @@ async function _invokePaymentSessionFallback(payload) {
     const reason = json?.error || txt || `HTTP ${res.status}`;
     throw new Error(`Edge Function HTTP ${res.status}: ${reason}`);
   }
-  if (!json || json.ok !== true || !json.checkoutUrl) {
+  if (!json || json.ok !== true || (!json.checkoutUrl && !json.qrImageUrl)) {
     throw new Error(`Invalid Edge Function response: ${txt || 'empty body'}`);
   }
   return json;

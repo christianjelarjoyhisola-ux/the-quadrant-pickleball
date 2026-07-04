@@ -4916,7 +4916,7 @@ async function createOpenPlayPaymentSession(registration, signupData = {}) {
     openPlayRegistrationId: registration.id,
     customer: {
       name: signupData.fullName || registration.full_name || registration.fullName || 'Open Play Player',
-      email: '',
+      email: signupData.email || registration.email || registration.email_address || '',
       phone: '',
     },
     metadata: {
@@ -8125,6 +8125,10 @@ async function openPlaySignup(courtId, date, h, courtName) {
             <label class="fl">Full Name *</label>
             <input type="text" class="fi" id="opFullName" placeholder="Enter your full name" autocomplete="name" oninput="this.style.borderColor=''"/>
           </div>
+          <div class="fg">
+            <label class="fl">Email *</label>
+            <input type="email" class="fi" id="opEmail" placeholder="youremail@gmail.com" autocomplete="email" oninput="this.style.borderColor=''"/>
+          </div>
           <div class="op-summary">
             <div class="op-fee-mini">
               <div class="op-fee-mini-line"><span>Open Play Fee</span><strong>${fmt(openPlayFee)}</strong></div>
@@ -8421,10 +8425,18 @@ async function verifyOpReceipt(ref, method, inlineData) {
 async function submitOpenPlay() {
   const nameEl = $('opFullName');
   const name = (nameEl?.value || '').trim();
+  const emailEl = $('opEmail');
+  const email = (emailEl?.value || '').trim();
   if (!name) {
     if (nameEl) nameEl.style.borderColor = 'var(--red)';
     toast('Please enter your full name.', 'err');
     nameEl?.focus();
+    return;
+  }
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    if (emailEl) emailEl.style.borderColor = 'var(--red)';
+    toast('Please enter a valid email address.', 'err');
+    emailEl?.focus();
     return;
   }
   const payMethod = _opSignupData.payMethod;
@@ -8573,6 +8585,7 @@ async function submitOpenPlay() {
       try {
         const session = await createOpenPlayPaymentSession(registration, {
           fullName: name,
+          email,
           courtName: _opSignupData.courtName,
           date: _opSignupData.date,
           sessionLabel: timeLabel,

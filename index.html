@@ -6221,7 +6221,7 @@ async function onCardDate(courtId, date, options = {}) {
   const openPlaySession = getOpenPlaySessionForDate(date, courtId);
   let openPlayCardHtml = '';
   if (!isPastDate_ && openPlaySession) {
-    const opRegCount = await DB.getOpenPlayCountForDate(date, courtId);
+    const opRegCount = await DB.getOpenPlayCountForDate(date);
     const opSpotsLeft = Math.max(0, (openPlayMaxPlayers || 40) - opRegCount);
     openPlayCardHtml = openPlaySessionHtml({
       courtId,
@@ -6280,11 +6280,11 @@ async function renderCourts() {
   const selectedDate = selectedCourtBrowseDate();
   const isSelectedToday = selectedDate === today;
   const isSelectedPast = selectedDate < today;
-  const [courts, bookings, , openPlayCountsByCourt] = await Promise.all([
+  const [courts, bookings, , openPlaySharedCount] = await Promise.all([
     DB.getCourts(),
     DB.getBookings({ date: selectedDate, activeOnly: true }),
     loadOperatingHours(),
-    DB.getOpenPlayCountsForDate ? DB.getOpenPlayCountsForDate(selectedDate) : Promise.resolve({}),
+    DB.getOpenPlayCountForDate ? DB.getOpenPlayCountForDate(selectedDate) : Promise.resolve(0),
   ]);
   const curHour = isSelectedToday ? nowHour() : (isSelectedPast ? 999 : -1);
   const courtsGrid = $('courtsGrid');
@@ -6293,7 +6293,7 @@ async function renderCourts() {
   const openPlayTodayByCourt = {};
   courts.forEach(c => {
     const session = getOpenPlaySessionForDate(selectedDate, c.id);
-    const count = session ? Number(openPlayCountsByCourt?.[String(c.id)] || 0) : 0;
+    const count = session ? Number(openPlaySharedCount || 0) : 0;
     openPlayTodayByCourt[c.id] = {
       session,
       spotsLeft: Math.max(0, (openPlayMaxPlayers || 40) - count),
@@ -6594,7 +6594,7 @@ async function renderSlots() {
   let openPlayBlock = '';
   const openPlaySession = getOpenPlaySessionForDate(date, court?.id);
   if (openPlaySession) {
-    const opRegCount = await DB.getOpenPlayCountForDate(date, court?.id);
+    const opRegCount = await DB.getOpenPlayCountForDate(date);
     const opSpotsLeft = Math.max(0, (openPlayMaxPlayers || 40) - opRegCount);
     openPlayBlock = openPlaySessionHtml({
       courtId: court.id,
@@ -8051,7 +8051,7 @@ async function openPlaySignup(courtId, date, h, courtName) {
   $('opModal').classList.add('active');
 
   // Check capacity
-  const count = await DB.getOpenPlayCountForDate(date, courtId);
+  const count = await DB.getOpenPlayCountForDate(date);
   if (count >= openPlayMaxPlayers) {
     if ($('opSpotsBadge')) $('opSpotsBadge').textContent = `0/${openPlayMaxPlayers} spots`;
     $('opModalBody').innerHTML = `
@@ -8490,7 +8490,7 @@ async function submitOpenPlay() {
   if (btn) { btn.disabled = true; btn.textContent = 'Submitting…'; }
   try {
     // Re-check capacity at submit time to prevent race conditions
-    const currentCount = await DB.getOpenPlayCountForDate(_opSignupData.date, _opSignupData.courtId);
+    const currentCount = await DB.getOpenPlayCountForDate(_opSignupData.date);
     if (currentCount >= openPlayMaxPlayers) {
       $('opModalBody').innerHTML = `
         <div style="text-align:center;padding:28px 0">

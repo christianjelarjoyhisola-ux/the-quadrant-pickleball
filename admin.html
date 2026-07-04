@@ -2058,9 +2058,9 @@ tr:hover td { background: var(--bg2); }
               <div style="font-size:.76rem;color:var(--muted);margin-top:4px">Customers pay 50% or 100% of this.</div>
             </div>
             <div>
-              <label class="fl" style="margin-bottom:6px">Max Players per Court / Day</label>
+              <label class="fl" style="margin-bottom:6px">Max Players per Open Play Session</label>
               <input type="number" class="fi" id="opMaxPlayers" min="1" step="1" placeholder="40"/>
-              <div style="font-size:.76rem;color:var(--muted);margin-top:4px">Limit applies separately to each Open Play court.</div>
+              <div style="font-size:.76rem;color:var(--muted);margin-top:4px">Limit is shared by every court included in the same Open Play schedule.</div>
             </div>
           </div>
         </div>
@@ -7300,7 +7300,7 @@ async function renderOpRegistrations() {
         </tbody>
       </table>
     </div>
-    <div style="margin-top:10px;font-size:.78rem;color:var(--muted)">${activeRegs.length} active reservations shown · Max ${maxPerCourt} per court/day · Total collected: <strong style="color:var(--text)">${fmt(activeRegs.reduce((s, r) => s + Number(r.amount), 0))}</strong></div>`;
+    <div style="margin-top:10px;font-size:.78rem;color:var(--muted)">${activeRegs.length} active reservations shown · Max ${maxPerCourt} per Open Play session · Total collected: <strong style="color:var(--text)">${fmt(activeRegs.reduce((s, r) => s + Number(r.amount), 0))}</strong></div>`;
 }
 
 async function deleteOpReg(id) {

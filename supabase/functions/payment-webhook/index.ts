@@ -38,11 +38,37 @@ type WebhookBody = {
   };
 };
 
+type SupabaseDb = ReturnType<typeof createClient<any>>;
+
+type OpenPlayRegistrationEmailRow = {
+  id: string | number;
+  full_name?: string | null;
+  email?: string | null;
+  court_name?: string | null;
+  date?: string | null;
+  time_label?: string | null;
+  payment_type?: string | null;
+  amount?: number | string | null;
+};
+
 function normalizeStatus(input?: string) {
   const v = (input || "").toLowerCase();
   if (["paid", "succeeded", "success", "completed"].includes(v)) return "paid";
   if (["failed", "canceled", "cancelled", "expired"].includes(v)) return "failed";
   return "pending";
+}
+
+function isoFromPayMongoTimestamp(value: unknown) {
+  if (typeof value === "string" && value.trim()) {
+    const asNumber = Number(value);
+    if (Number.isFinite(asNumber) && asNumber > 0) return new Date(asNumber * 1000).toISOString();
+    const asDate = new Date(value);
+    return Number.isNaN(asDate.getTime()) ? null : asDate.toISOString();
+  }
+  if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+    return new Date(value * 1000).toISOString();
+  }
+  return null;
 }
 
 async function verifySignature(req: Request, bodyText: string) {
@@ -117,17 +143,21 @@ function parseWebhook(body: WebhookBody) {
     const evStatus = String(attrs.status || paymentAttrs.status || "");
     const evRef = String(attrs.reference_number || "");
     const evMeta = (attrs.metadata || {}) as Record<string, unknown>;
+    const paymentIntent = attrs.payment_intent as { id?: string; attributes?: Record<string, unknown> } | undefined;
     const intentRef =
       typeof attrs.payment_intent_id === "string" ? attrs.payment_intent_id :
       typeof attrs.payment_intent === "string" ? attrs.payment_intent :
-      typeof attrs.payment_intent_id === "object" && attrs.payment_intent_id ? String(attrs.payment_intent_id) :
+      paymentIntent?.id ||
       "";
     const metaRef = typeof evMeta.booking_ref === "string" ? evMeta.booking_ref : "";
     if (!bookingRef) bookingRef = evRef || metaRef || null;
     if (intentRef) providerRef = intentRef;
     if (evStatus) normalized = normalizeStatus(evStatus);
-    const paidAt = attrs.paid_at || paymentAttrs.paid_at || attrs.updated_at;
-    if (typeof paidAt === "string" && paidAt) paidAtIso = paidAt;
+    const paidAt = isoFromPayMongoTimestamp(paymentAttrs.paid_at) ||
+      isoFromPayMongoTimestamp(attrs.paid_at) ||
+      isoFromPayMongoTimestamp(paymentIntent?.attributes?.paid_at) ||
+      isoFromPayMongoTimestamp(attrs.updated_at);
+    if (paidAt) paidAtIso = paidAt;
     if (evType.toLowerCase().includes("paid")) normalized = "paid";
     if (evType.toLowerCase().includes("failed") || evType.toLowerCase().includes("expired")) normalized = "failed";
     if (!sessionId) sessionId = evData.id || null;
@@ -139,6 +169,52 @@ function parseWebhook(body: WebhookBody) {
 function openPlayIdFromRef(ref: string | null) {
   const match = String(ref || "").match(/^OP-(\d+)$/i);
   return match ? match[1] : "";
+}
+
+async function sendOpenPlayConfirmationEmail(
+  supabaseUrl: string,
+  serviceRoleKey: string,
+  registrationId: string,
+  bookingRef: string,
+  db: SupabaseDb,
+) {
+  const { data: reg, error } = await db
+    .from("open_play_registrations")
+    .select("id,full_name,email,court_name,date,time_label,payment_type,amount")
+    .eq("id", registrationId)
+    .single<OpenPlayRegistrationEmailRow>();
+  if (error || !reg?.email) return;
+
+  const payload = {
+    type: "open_play",
+    bookingRef,
+    email: reg.email,
+    fullName: reg.full_name || "Open Play Player",
+    courtName: reg.court_name || "Open Play Courts",
+    date: reg.date,
+    startTime: "",
+    endTime: "",
+    duration: 0,
+    total: Number(reg.amount || 0),
+    downpayment: Number(reg.amount || 0),
+    timeLabel: reg.time_label || "",
+    paymentType: reg.payment_type || "Open Play",
+    paymentMethod: "qrph",
+    idempotencyKey: `open-play-confirmation-${bookingRef}`,
+  };
+
+  const res = await fetch(`${supabaseUrl}/functions/v1/send-confirmation-email`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${serviceRoleKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    console.error("Open Play confirmation email failed", res.status, text);
+  }
 }
 
 Deno.serve(async (req) => {
@@ -162,8 +238,8 @@ Deno.serve(async (req) => {
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceRoleKey =
-      Deno.env.get("SERVICE_ROLE_KEY") ||
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ||
+      Deno.env.get("SERVICE_ROLE_KEY") ||
       "";
     if (!serviceRoleKey) throw new Error("Missing SERVICE_ROLE_KEY");
     const db = createClient(supabaseUrl, serviceRoleKey);
@@ -217,6 +293,17 @@ Deno.serve(async (req) => {
           .from("open_play_registrations")
           .update({ payment_status: normalized === "paid" ? "paid" : normalized === "failed" ? "rejected" : "pending" })
           .eq("id", openPlayRegistrationId);
+        if (normalized === "paid") {
+          await sendOpenPlayConfirmationEmail(
+            supabaseUrl,
+            serviceRoleKey,
+            openPlayRegistrationId,
+            bookingRefToUpdate,
+            db,
+          ).catch((emailErr) => {
+            console.error("Open Play confirmation email error", emailErr);
+          });
+        }
       } else {
         const bookingUpdate: Record<string, unknown> = {
           payment_status: normalized,

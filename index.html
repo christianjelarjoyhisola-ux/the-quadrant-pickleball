@@ -5071,6 +5071,7 @@ async function completeQrphPaidBooking(booking) {
   }
   const fresh = await DB.getBookingByRef(booking.ref).catch(() => null);
   const paidBooking = { ...(fresh || booking), paymentStatus: 'paid', status: 'confirmed', paidAt: (fresh || booking)?.paidAt || new Date().toISOString() };
+  sendCustomerConfirmationEmail(paidBooking);
   showInvoice(paidBooking);
   resetForm();
   toast('QRPh payment received. Booking confirmed.', 'ok');
@@ -5224,6 +5225,7 @@ function startPaymentWatch(ref) {
     if (b.paymentStatus === 'paid') {
       stopPaymentWatch();
       b.status = 'confirmed';
+      sendCustomerConfirmationEmail(b);
       toast('Payment received. Booking confirmed.', 'ok');
       await renderCourts();
       if (court && $('bDate').value) await renderSlots();
@@ -7632,6 +7634,15 @@ function resetForm() {
    ============================================= */
 function showInvoice(b) {
   const set = (id, value) => { const el = $(id); if (el) el.textContent = value; };
+  const refLabel = $('invModal')?.querySelector('.inv-ref-label');
+  const courtLabel = $('iCourt')?.closest('.i-row')?.querySelector('.lb');
+  const durationRow = $('iDur')?.closest('.i-row');
+  const gcashLabel = $('iGcashRefRow')?.querySelector('.lb');
+  if (refLabel) refLabel.textContent = 'Booking Reference';
+  if (courtLabel) courtLabel.textContent = 'Court';
+  if (durationRow) durationRow.style.display = '';
+  if (gcashLabel) gcashLabel.textContent = 'GCash Ref #';
+
   const isConfirmed = b.status === 'confirmed';
   const receiptStatus = b._receiptResult?.status || b.receiptStatus || '';
   const isRejected = b.status === 'cancelled' || b.paymentStatus === 'rejected' || receiptStatus === 'rejected';
@@ -7779,6 +7790,87 @@ function showInvoice(b) {
   if ($('invModal')) $('invModal').classList.add('show');
 }
 
+function showOpenPlayReservationReceipt(reg) {
+  const set = (id, value) => { const el = $(id); if (el) el.textContent = value; };
+  const ref = reg?.displayRef || reg?.ref || (reg?.id ? `OP-${reg.id}` : '');
+  const amount = Number(reg?.amount || reg?.total || reg?.downpayment || 0);
+  const name = reg?.full_name || reg?.fullName || 'Open Play Player';
+  const email = reg?.email || reg?.email_address || '';
+  const contact = reg?.contact_number || reg?.contactNumber || '';
+  const courtName = reg?.court_name || reg?.courtName || openPlayCourtGroupLabel || 'Open Play Courts';
+  const timeLabel = reg?.time_label || reg?.timeLabel || reg?.sessionLabel || 'Open Play';
+
+  $('opModal')?.classList.remove('active');
+  clearOpReceipt();
+
+  const refLabel = $('invModal')?.querySelector('.inv-ref-label');
+  const courtLabel = $('iCourt')?.closest('.i-row')?.querySelector('.lb');
+  const durationRow = $('iDur')?.closest('.i-row');
+  const gcashLabel = $('iGcashRefRow')?.querySelector('.lb');
+  if (refLabel) refLabel.textContent = 'Open Play Reference';
+  if (courtLabel) courtLabel.textContent = 'Session';
+  if (durationRow) durationRow.style.display = 'none';
+  if (gcashLabel) gcashLabel.textContent = 'QRPh Reference';
+
+  const heroEl = $('invModal')?.querySelector('.inv-hero');
+  const checkIconEl = heroEl?.querySelector('.inv-check-icon');
+  if (heroEl) {
+    heroEl.classList.remove('inv-hero--rejected');
+    heroEl.classList.add('inv-hero--approved');
+  }
+  if (checkIconEl) checkIconEl.textContent = '\u2713';
+
+  set('iTitle', 'Open Play Confirmed!');
+  set('iHeroSub', 'Payment received. Your Open Play spot is reserved.');
+  const statusEl = $('iStatus');
+  if (statusEl) {
+    statusEl.textContent = 'Confirmed';
+    statusEl.className = 'inv-status-bdg inv-status-confirmed';
+  }
+
+  set('iRef', ref);
+  set('iName', name);
+  set('iContact', contact || '-');
+  set('iEmail', email || '-');
+  set('iCourt', courtName);
+  set('iDate', fmtD(reg?.date));
+  set('iTime', timeLabel);
+  set('iPay', 'QRPh');
+
+  if ($('iGcashRefRow')) $('iGcashRefRow').style.display = 'none';
+  set('iTot', fmt(amount));
+  set('iDown', fmt(amount));
+  set('iDownLabel', 'Full Payment');
+  set('iDownNote', 'Fully paid. Your Open Play spot is confirmed.');
+
+  const timelineEl = $('iTimeline');
+  if (timelineEl) {
+    timelineEl.innerHTML = '<div class="inv-timeline-title">Status</div><div class="inv-timeline-list">' +
+      [
+        ['Open Play submitted', 'done'],
+        ['QRPh payment received', 'done'],
+        ['Spot confirmed', 'done'],
+      ].map(([label, state]) =>
+        `<div class="inv-timeline-step ${state}"><span class="inv-timeline-dot">\u2713</span><span class="inv-timeline-label">${label}</span></div>`
+      ).join('') +
+      '</div>';
+  }
+
+  const nextEl = $('iNext');
+  if (nextEl) {
+    nextEl.innerHTML = `<div class="inv-next-title">What's Next</div>` +
+      [
+        ['Save or screenshot this Open Play reference.', '1'],
+        ['Show this reference at the front desk when you arrive.', '2'],
+        ['Please arrive early so staff can check you in.', '3'],
+      ].map(([txt, n]) => `<div class="inv-next-step"><div class="inv-next-num">${n}</div><div class="inv-next-txt">${txt}</div></div>`).join('');
+  }
+
+  set('iEmailNote', email ? `Confirmation details sent to ${email}` : '');
+  $('invModal')?.classList.add('show');
+  document.body.style.overflow = 'hidden';
+}
+
 function copyInvRef() {
   const ref = $('iRef')?.textContent || '';
   if (!ref || ref === '—') return;
@@ -7904,17 +7996,74 @@ function dismissSplash() {
 // Lock scroll while splash is showing
 document.body.style.overflow = 'hidden';
 
+function openPlayIdFromPaymentRef(ref, params = new URLSearchParams()) {
+  const explicit = params.get('openPlayRegistrationId') || params.get('open_play_registration_id') || '';
+  if (explicit) return explicit;
+  const match = String(ref || '').match(/^OP-(.+)$/i);
+  return match ? match[1] : '';
+}
+
+function showOpenPlayConfirmed(reg) {
+  showOpenPlayReservationReceipt(reg);
+}
+
+async function handleOpenPlayPaymentReturn({ payment, bookingRef, params }) {
+  const openPlayRegistrationId = openPlayIdFromPaymentRef(bookingRef, params);
+  if (!openPlayRegistrationId) return false;
+  const opRef = bookingRef || `OP-${openPlayRegistrationId}`;
+
+  if (payment === 'cancelled') {
+    toast('QRPh checkout was cancelled. Your Open Play spot is still pending payment.', 'err');
+    return true;
+  }
+
+  let reg = null;
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    if (typeof DB.syncPaymentSession === 'function') {
+      await DB.syncPaymentSession({ bookingRef: opRef }, { allowFailure: true }).catch(() => null);
+    }
+    reg = typeof DB.getOpenPlayRegistration === 'function'
+      ? await DB.getOpenPlayRegistration(openPlayRegistrationId).catch(() => null)
+      : null;
+    const paid = reg?.payment_status === 'paid' || reg?.paymentStatus === 'paid';
+    if (paid) break;
+    await new Promise(resolve => setTimeout(resolve, 1500));
+  }
+
+  if (reg) {
+    if (reg.payment_status !== 'paid' && reg.paymentStatus !== 'paid') {
+      await DB.updateOpenPlayRegistration(openPlayRegistrationId, { paymentStatus: 'paid' }).catch(() => {});
+      reg = { ...reg, payment_status: 'paid', paymentStatus: 'paid' };
+    }
+    DB.sendOpenPlayConfirmationEmail({ ...reg, id: openPlayRegistrationId, ref: opRef, payment_status: 'paid' }, { allowFailure: true }).catch(() => {});
+    showOpenPlayConfirmed(reg);
+    toast('QRPh payment received. Open Play spot confirmed.', 'ok');
+    await renderCourts();
+    return true;
+  }
+
+  toast('Payment received, but Open Play registration could not be loaded. Please contact the court with your PayMongo reference.', 'err');
+  return true;
+}
+
 async function handlePaymentReturn() {
   const params = new URLSearchParams(location.search);
   const payment = (params.get('payment') || '').toLowerCase();
   const bookingRef = params.get('bookingRef') || params.get('booking_ref') || '';
-  if (!payment || !bookingRef) return false;
+  const openPlayReturnId = openPlayIdFromPaymentRef(bookingRef, params);
+  if (!payment || (!bookingRef && !openPlayReturnId)) return false;
 
   dismissSplash();
   if (payment === 'cancelled') {
     toast('QRPh checkout was cancelled. Your booking is still pending payment.', 'err');
   } else {
     toast('Checking QRPh payment...', 'ok');
+  }
+
+  if (openPlayReturnId) {
+    const handled = await handleOpenPlayPaymentReturn({ payment, bookingRef, params });
+    history.replaceState({}, document.title, location.pathname || '/');
+    return handled;
   }
 
   let booking = null;
@@ -7937,6 +8086,7 @@ async function handlePaymentReturn() {
       booking.paymentStatus = 'paid';
       booking.status = 'confirmed';
       booking.paidAt = booking.paidAt || new Date().toISOString();
+      sendCustomerConfirmationEmail(booking);
     }
     showInvoice(booking);
     await renderCourts();
@@ -8716,7 +8866,7 @@ async function submitOpenPlay() {
 }
 </script>
 <script src="supabase.min.js"></script>
-<script src="supabase-config.js?v=20260703-prod-remote"></script>
+<script src="supabase-config.js?v=20260704-op-reservation-receipt"></script>
 
 <!-- MOBILE STICKY BOOK NOW BAR -->
 <div id="mobileBookBar" class="mobile-book-bar" style="display:none">

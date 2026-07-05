@@ -22,6 +22,7 @@ type Payload = {
   timeLabel?: string;
   paymentType?: string;
   paymentMethod?: string;
+  idempotencyKey?: string;
   bookingItems?: Array<{
     courtName: string;
     date: string;
@@ -309,12 +310,17 @@ Deno.serve(async (req) => {
     const subject = isOpenPlay
       ? `Open Play Confirmed - ${body.bookingRef} | THE QUADRANT`
       : `Booking Confirmed - ${body.bookingRef} | THE QUADRANT`;
+    const idempotencyKey = String(
+      body.idempotencyKey ||
+      `${isOpenPlay ? "open-play" : "booking"}-confirmation-${body.bookingRef}`
+    ).slice(0, 256);
 
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
       headers: {
         Authorization: `Bearer ${resendKey}`,
         "Content-Type": "application/json",
+        "Idempotency-Key": idempotencyKey,
       },
       body: JSON.stringify({
         from: fromAddress,

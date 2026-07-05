@@ -681,6 +681,16 @@ window.DB = {
     });
   },
 
+  async getOpenPlayRegistration(id) {
+    const { data, error } = await _sb
+      .from('open_play_registrations')
+      .select('*')
+      .eq('id', id)
+      .maybeSingle();
+    if (error) { console.error('getOpenPlayRegistration:', error); throw error; }
+    return data || null;
+  },
+
   async addOpenPlayRegistration(reg) {
     const { data, error } = await _sb.from('open_play_registrations').insert({
       full_name: reg.fullName,
@@ -1497,6 +1507,9 @@ window.DB = {
 
     async getOpenPlayRegistrations() {
       return readDb().openPlayRegistrations.sort((a, b) => String(b.created_at || '').localeCompare(String(a.created_at || '')));
+    },
+    async getOpenPlayRegistration(id) {
+      return readDb().openPlayRegistrations.find(r => String(r.id) === String(id)) || null;
     },
     async addOpenPlayRegistration(reg) {
       const db = readDb();

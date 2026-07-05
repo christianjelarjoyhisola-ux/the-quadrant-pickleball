@@ -207,6 +207,10 @@ function findExpiresAt(obj: unknown): string | null {
   return findStringByKey(obj, ["expires_at", "expiresAt", "expires"]);
 }
 
+function qrExpiresAt(seconds = 900) {
+  return new Date(Date.now() + seconds * 1000).toISOString();
+}
+
 async function paymongoRequest(secretKey: string, path: string, init: RequestInit = {}) {
   const cleanSecretKey = cleanEnvValue(secretKey);
   const auth = btoa(`${cleanSecretKey}:`);
@@ -237,6 +241,7 @@ async function createPayMongoQrphSession(input: {
   metadata: Record<string, string>;
 }) {
   const amountCents = Math.round(input.amountPhp * 100);
+  const expirySeconds = 900;
 
   const intentBody = {
     data: {
@@ -244,11 +249,6 @@ async function createPayMongoQrphSession(input: {
         amount: amountCents,
         currency: "PHP",
         payment_method_allowed: ["qrph"],
-        payment_method_options: {
-          qrph: {
-            expires_after: 900,
-          },
-        },
         capture_type: "automatic",
         description: `Downpayment for ${input.bookingRef}`,
         statement_descriptor: "THE QUADRANT",
@@ -271,6 +271,7 @@ async function createPayMongoQrphSession(input: {
       data: {
         attributes: {
           type: "qrph",
+          expiry_seconds: expirySeconds,
           billing: {
             name: input.customer.name,
             email: input.customer.email,
@@ -305,7 +306,7 @@ async function createPayMongoQrphSession(input: {
     paymentMethodId,
     clientKey,
     qrImageUrl,
-    expiresAt: findExpiresAt(attachJson),
+    expiresAt: findExpiresAt(attachJson) || qrExpiresAt(expirySeconds),
     raw: { paymentIntent: intentJson, paymentMethod: methodJson, attach: attachJson },
   };
 }
@@ -378,8 +379,8 @@ Deno.serve(async (req) => {
   try {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
     const serviceRoleKey =
-      Deno.env.get("SERVICE_ROLE_KEY") ||
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ||
+      Deno.env.get("SERVICE_ROLE_KEY") ||
       "";
     if (!serviceRoleKey) throw new Error("Missing SERVICE_ROLE_KEY");
     const provider = (Deno.env.get("PAYMENT_PROVIDER") || "paymongo").toLowerCase();

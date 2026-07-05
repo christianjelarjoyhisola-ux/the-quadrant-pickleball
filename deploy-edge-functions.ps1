@@ -28,12 +28,22 @@ function Add-SecretArg($Name, $Value) {
   }
 }
 
+function Add-ServiceRoleSecret($Value) {
+  $clean = "$Value".Trim()
+  if (-not $clean) { return }
+  if ($clean.Length -lt 80 -and -not $clean.StartsWith("sb_secret_")) {
+    Write-Warning "Skipping SERVICE_ROLE_KEY because the local value does not look like a real Supabase service-role key."
+    return
+  }
+  Add-SecretArg "SERVICE_ROLE_KEY" $clean
+}
+
 npx supabase link --project-ref $envMap["SUPABASE_PROJECT_REF"]
 
 $secretArgs = @()
 Add-SecretArg "SUPABASE_URL" $envMap["SUPABASE_URL"]
 Add-SecretArg "SUPABASE_ANON_KEY" $envMap["SUPABASE_ANON_KEY"]
-Add-SecretArg "SERVICE_ROLE_KEY" $envMap["SUPABASE_SERVICE_ROLE_KEY"]
+Add-ServiceRoleSecret $envMap["SUPABASE_SERVICE_ROLE_KEY"]
 Add-SecretArg "PAYMENT_PROVIDER" $(if ($envMap["PAYMENT_PROVIDER"]) { $envMap["PAYMENT_PROVIDER"] } else { "paymongo" })
 Add-SecretArg "PAYMONGO_SECRET_KEY" $envMap["PAYMONGO_SECRET_KEY"]
 Add-SecretArg "PAYMENT_SUCCESS_URL" $envMap["PAYMENT_SUCCESS_URL"]

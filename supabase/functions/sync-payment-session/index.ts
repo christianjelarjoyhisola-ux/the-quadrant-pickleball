@@ -52,6 +52,21 @@ function normalizeStatus(input?: string) {
   return "pending";
 }
 
+function isoFromPayMongoTimestamp(value: unknown) {
+  if (typeof value === "string" && value.trim()) {
+    const asNumber = Number(value);
+    if (Number.isFinite(asNumber) && asNumber > 0) {
+      return new Date(asNumber * 1000).toISOString();
+    }
+    const asDate = new Date(value);
+    return Number.isNaN(asDate.getTime()) ? null : asDate.toISOString();
+  }
+  if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+    return new Date(value * 1000).toISOString();
+  }
+  return null;
+}
+
 function firstPaymentAttrs(attrs: Record<string, unknown>) {
   const payments = Array.isArray(attrs.payments) ? attrs.payments : [];
   const latest = payments[0] as { attributes?: Record<string, unknown> } | undefined;
@@ -61,21 +76,25 @@ function firstPaymentAttrs(attrs: Record<string, unknown>) {
 function paymentStateFromPayMongo(json: Record<string, unknown>) {
   const data = (json.data || {}) as Record<string, unknown>;
   const attrs = (data.attributes || {}) as Record<string, unknown>;
+  const intent = (attrs.payment_intent || {}) as { attributes?: Record<string, unknown> };
+  const intentAttrs = intent?.attributes || {};
   const paymentAttrs = firstPaymentAttrs(attrs);
 
-  const intentStatus = String(attrs.status || "");
+  const intentStatus = String(intentAttrs.status || attrs.status || "");
   const paymentStatus = String(paymentAttrs.status || "");
   const normalized = normalizeStatus(paymentStatus || intentStatus);
-  const paidAt =
-    typeof paymentAttrs.paid_at === "string" ? paymentAttrs.paid_at :
-    typeof attrs.paid_at === "string" ? attrs.paid_at :
-    normalized === "paid" ? new Date().toISOString() : null;
+  const explicitPaidAt =
+    isoFromPayMongoTimestamp(paymentAttrs.paid_at) ||
+    isoFromPayMongoTimestamp(attrs.paid_at) ||
+    isoFromPayMongoTimestamp(intentAttrs.paid_at) ||
+    isoFromPayMongoTimestamp(attrs.updated_at);
+  const paidAt = explicitPaidAt || (normalized === "paid" ? new Date().toISOString() : null);
 
   return { attrs, normalized, paidAt };
 }
 
 async function fetchPayMongoCheckout(secretKey: string, sessionId: string) {
-  const res = await fetch(`https://api.paymongo.com/v1/checkout_sessions/${encodeURIComponent(sessionId)}`, {
+  const res = await fetch(`https://api.paymongo.com/v2/checkout_sessions/${encodeURIComponent(sessionId)}`, {
     method: "GET",
     headers: {
       Authorization: paymongoAuthHeader(secretKey),
@@ -152,8 +171,8 @@ Deno.serve(async (req) => {
 
     const supabaseUrl = Deno.env.get("SUPABASE_URL") || "";
     const serviceRoleKey =
-      Deno.env.get("SERVICE_ROLE_KEY") ||
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ||
+      Deno.env.get("SERVICE_ROLE_KEY") ||
       "";
     const secretKey = cleanEnvValue(Deno.env.get("PAYMONGO_SECRET_KEY"));
     if (!supabaseUrl) throw new Error("Missing SUPABASE_URL");

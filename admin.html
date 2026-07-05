@@ -77,6 +77,20 @@ h1, h2, h3, h4 { font-family: 'Bebas Neue', sans-serif; letter-spacing: 1px; }
 ::-webkit-scrollbar { width: 5px; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 .hidden { display: none !important; }
+body.admin-boot .admin-layout { visibility: hidden; }
+body:not(.admin-boot) .admin-boot-loader { display: none; }
+.admin-boot-loader {
+  position: fixed; inset: 60px 0 0 0; z-index: 80;
+  display: flex; align-items: center; justify-content: center;
+  background: var(--bg);
+}
+.admin-boot-card {
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+  padding: 18px 22px;
+}
+.admin-boot-card .pb-loader-txt {
+  font-size: .76rem; text-transform: uppercase; letter-spacing: .9px;
+}
 
 /* Pickleball loading indicator */
 .pb-loader {
@@ -979,6 +993,8 @@ tr:hover td { background: var(--bg2); }
   }
   #maintFeePanel .mf-tile-val,
   #maintFeePanel #mfRateDisplay,
+  #maintFeePanel #mfGrossFee,
+  #maintFeePanel #mfProcessorFee,
   #maintFeePanel #mfFee { font-size: 1.28rem !important; line-height: 1 !important; }
   #maintFeePanel .mf-tile-label { font-size: .6rem !important; line-height: 1.15 !important; }
   .mf-toggle {
@@ -1209,7 +1225,7 @@ tr:hover td { background: var(--bg2); }
   grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px !important;
 }
 #sec-reports .rp-stat-cards .sc { min-height: 88px; padding: 14px 14px 12px; border-radius: 12px; }
-#sec-reports .rp-stat-cards .sc-lbl { font-size: .66rem; margin-bottom: 6px; }
+#sec-reports .rp-stat-cards .sc-lbl { font-size: .66rem; margin-bottom: 6px; line-height: 1.15; padding-right: 24px; }
 #sec-reports .rp-stat-cards .sc-val { font-size: 1.75rem; letter-spacing: .5px; }
 #sec-reports .rp-stat-cards .sc-ic { top: 12px; right: 12px; font-size: 1.15rem; opacity: .28; }
 .rp-breakdown-panel { padding: 14px; }
@@ -1277,6 +1293,12 @@ tr:hover td { background: var(--bg2); }
     gap: 8px; padding: 9px 0;
   }
   .rp-bar-val, .rp-trend-val { font-size: .76rem; }
+}
+@media (max-width: 440px) {
+  #sec-reports .toolbar { flex-direction: column; align-items: stretch; }
+  #sec-reports .toolbar > div { width: 100%; }
+  #sec-reports .toolbar h2 { font-size: 1.35rem; }
+  #sec-reports .rp-export { width: 100%; justify-content: center; }
 }
 
 /* ── OPEN PLAY DAY CHIPS ──────────────────────────────── */
@@ -1580,7 +1602,7 @@ tr:hover td { background: var(--bg2); }
 
 </style>
 </head>
-<body data-theme="light">
+<body data-theme="light" class="admin-boot">
 <div class="toasts" id="toasts"></div>
 
 <!-- TOP NAV -->
@@ -1600,6 +1622,13 @@ tr:hover td { background: var(--bg2); }
     <button class="btn btn-d" onclick="logout()" style="font-size:13px"><span class="sign-out-text">Sign Out</span><span class="sign-out-icon" aria-hidden="true">&#x23FB;</span></button>
   </div>
 </nav>
+
+<div class="admin-boot-loader" aria-live="polite" aria-label="Loading admin dashboard">
+  <div class="admin-boot-card">
+    <div class="pb-ball" aria-hidden="true"></div>
+    <div class="pb-loader-txt">Loading dashboard</div>
+  </div>
+</div>
 
 <!-- ADMIN LAYOUT -->
 <div id="sidebarOverlay" class="sidebar-overlay" onclick="toggleSidebar()"></div>
@@ -1671,11 +1700,19 @@ tr:hover td { background: var(--bg2); }
           </div>
           <div class="mf-tile" style="background:var(--input);border:1px solid var(--border);border-radius:10px;padding:14px;text-align:center">
             <div class="mf-tile-label" style="font-size:.72rem;color:var(--text3);margin-bottom:3px;text-transform:uppercase;letter-spacing:.5px">Rate</div>
-            <div style="font-size:1rem;font-weight:700;color:var(--text)" id="mfRateDisplay">₱5.00 / hr</div>
+            <div style="font-size:1rem;font-weight:700;color:var(--text)" id="mfRateDisplay">—</div>
+          </div>
+          <div class="mf-tile" style="background:var(--input);border:1px solid var(--border);border-radius:10px;padding:14px;text-align:center">
+            <div class="mf-tile-label" style="font-size:.72rem;color:var(--text3);margin-bottom:3px;text-transform:uppercase;letter-spacing:.5px">Gross Fee</div>
+            <div style="font-size:1.15rem;font-weight:800;color:var(--text)" id="mfGrossFee">₱0.00</div>
+          </div>
+          <div class="mf-tile" style="background:var(--input);border:1px solid var(--border);border-radius:10px;padding:14px;text-align:center">
+            <div class="mf-tile-label" style="font-size:.72rem;color:var(--text3);margin-bottom:3px;text-transform:uppercase;letter-spacing:.5px">PayMongo Fee (1.34%)</div>
+            <div style="font-size:1.15rem;font-weight:800;color:var(--text)" id="mfProcessorFee">₱0.00</div>
           </div>
           <div class="mf-tile" style="background:rgba(var(--yellow-rgb),.12);border:1.5px solid rgba(var(--yellow-rgb),.4);border-radius:10px;padding:14px;text-align:center">
             <div style="font-size:1.6rem;font-weight:800;color:var(--yellow)" id="mfFee">₱0.00</div>
-            <div style="font-size:.72rem;color:var(--text3);margin-top:3px;text-transform:uppercase;letter-spacing:.5px">Fee to Collect</div>
+            <div style="font-size:.72rem;color:var(--text3);margin-top:3px;text-transform:uppercase;letter-spacing:.5px">Net Fee to Remit</div>
           </div>
         </div>
         <button type="button" class="mf-toggle" id="mfToggle" onclick="toggleMaintBreakdown()">Show breakdown</button>
@@ -1858,7 +1895,7 @@ tr:hover td { background: var(--bg2); }
     <div id="sec-reports" class="adm-sec">
       <div class="toolbar">
         <div class="rp-heading">
-          <h2>📈 REVENUE REPORTS</h2>
+          <h2 id="rpTitle">📈 REVENUE REPORTS</h2>
           <div class="rp-subtitle" id="rpPeriodLabel">This Week</div>
         </div>
         <button class="btn btn-p btn-sm rp-export" onclick="exportReportCSV()">📥 Export CSV</button>
@@ -1884,9 +1921,9 @@ tr:hover td { background: var(--bg2); }
       <!-- Summary cards -->
       <div class="stat-cards rp-stat-cards">
         <div class="sc"><div class="sc-lbl">Gross Revenue</div><div class="sc-val" id="rpGross">₱0</div><div class="sc-ic">💰</div></div>
-        <div class="sc"><div class="sc-lbl">Collected</div><div class="sc-val" id="rpCollected">₱0</div><div class="sc-ic">✅</div></div>
-        <div class="sc"><div class="sc-lbl">Pending</div><div class="sc-val" id="rpPending">₱0</div><div class="sc-ic">⏳</div></div>
-        <div class="sc"><div class="sc-lbl">Active Bookings</div><div class="sc-val" id="rpCount">0</div><div class="sc-ic">📋</div></div>
+        <div class="sc"><div class="sc-lbl">Court Revenue</div><div class="sc-val" id="rpCollected">₱0</div><div class="sc-ic">✅</div></div>
+        <div class="sc"><div class="sc-lbl">Booked Hours</div><div class="sc-val" id="rpPending">0</div><div class="sc-ic">⏱</div></div>
+        <div class="sc"><div class="sc-lbl">Bookings</div><div class="sc-val" id="rpCount">0</div><div class="sc-ic">📋</div></div>
       </div>
 
       <!-- Compact breakdown -->
@@ -1894,10 +1931,10 @@ tr:hover td { background: var(--bg2); }
         <div class="rp-breakdown-head">
           <h4>Breakdown</h4>
           <div class="rp-breakdown-tabs" role="tablist" aria-label="Report breakdown">
-            <button class="rp-tab active" data-rp-tab="court" onclick="setReportBreakdown('court')">Court</button>
+            <button class="rp-tab active" data-rp-tab="court" onclick="setReportBreakdown('court')">Court Revenue</button>
             <button class="rp-tab" data-rp-tab="payment" onclick="setReportBreakdown('payment')">Payment</button>
             <button class="rp-tab" data-rp-tab="received" onclick="setReportBreakdown('received')">Received</button>
-            <button class="rp-tab" data-rp-tab="trend" onclick="setReportBreakdown('trend')">Trend</button>
+            <button class="rp-tab" data-rp-tab="trend" onclick="setReportBreakdown('trend')">Court Trend</button>
           </div>
         </div>
         <div class="rp-breakdown-view active" data-rp-panel="court">
@@ -3024,6 +3061,7 @@ function toggleSidebar() {
 const $=id=>document.getElementById(id);
 const fmt=n=>'₱'+Number(n).toLocaleString('en-PH',{minimumFractionDigits:2});
 const fmtD=s=>{if(!s)return'—';return new Date(s+'T00:00:00').toLocaleDateString('en-PH',{month:'short',day:'numeric',year:'numeric'});};
+const PAYMONGO_PROCESSOR_FEE_RATE = 0.0134;
 function normalizePlatformFeeType(type) {
   return ['flat', 'booking', 'per_booking', 'per_transaction'].includes(String(type || '').toLowerCase()) ? 'flat' : 'per_hour';
 }
@@ -3031,6 +3069,11 @@ function getPlatformFeeConfig(settings = {}) {
   const amount = parseFloat(settings.maintenance_fee ?? settings.service_fee_rate ?? settings.booking_fee ?? '0') || 0;
   const type = normalizePlatformFeeType(settings.fee_type);
   return { amount, type };
+}
+function readPlatformFeeAmount(settings = {}) {
+  const raw = settings.maintenance_fee ?? settings.service_fee_rate ?? settings.booking_fee;
+  const amount = parseFloat(raw);
+  return Number.isFinite(amount) && amount >= 0 ? amount : null;
 }
 function platformFeeLabel(cfg, { short = false } = {}) {
   const unit = cfg.type === 'flat'
@@ -3040,6 +3083,27 @@ function platformFeeLabel(cfg, { short = false } = {}) {
 }
 function bookingBillableHours(b) {
   return Number(b.duration) || (Array.isArray(b.slots) ? b.slots.length : 0) || 1;
+}
+function bookingPaidAmountForProcessorFee(b) {
+  const status = String(b?.paymentStatus || b?.payment_status || '').toLowerCase();
+  if (status === 'paid') return Number(b?.total) || 0;
+  if (status === 'downpayment_paid') {
+    const downpayment = Number(b?.downpayment);
+    return Number.isFinite(downpayment) ? downpayment : (Number(b?.total) || 0) / 2;
+  }
+  return 0;
+}
+function bookingProcessorFeeAmount(b) {
+  const paymentRail = b?.paymentProvider || b?.payment_provider || b?.paymentMethod || b?.payment_method;
+  if (!isDigitalPayment(paymentRail)) return 0;
+  return bookingPaidAmountForProcessorFee(b) * PAYMONGO_PROCESSOR_FEE_RATE;
+}
+function bookingGroupProcessorFeeAmount(group) {
+  const items = group?.items || [group];
+  return items.reduce((sum, item) => sum + bookingProcessorFeeAmount(item), 0);
+}
+function netPlatformFeeAmount(grossFee, processorFee) {
+  return Math.max(0, (Number(grossFee) || 0) - (Number(processorFee) || 0));
 }
 function phDateKeyFromTimestamp(value) {
   if (!value) return '';
@@ -3269,6 +3333,17 @@ async function deleteBookingGroupByRef(ref) {
 }
 function calcPlatformFeeForBooking(b, cfg) {
   return cfg.type === 'flat' ? cfg.amount : cfg.amount * bookingBillableHours(b);
+}
+function calcPlatformFeeForGroup(group, cfg) {
+  return cfg.type === 'flat'
+    ? cfg.amount
+    : (group.items || [group]).reduce((sum, b) => sum + calcPlatformFeeForBooking(b, cfg), 0);
+}
+function calcCourtRevenueForBooking(b, cfg) {
+  return Math.max(0, (Number(b.total) || 0) - calcPlatformFeeForBooking(b, cfg));
+}
+function calcCourtRevenueForGroup(group, cfg) {
+  return Math.max(0, (Number(group.total) || 0) - calcPlatformFeeForGroup(group, cfg));
 }
 function platformFeeFormulaText(bookings, cfg) {
   const count = bookings.length;
@@ -3536,6 +3611,10 @@ function closeModal(id){$(id).classList.remove('show');}
 
 let sess;
 
+function setAdminReady() {
+  document.body.classList.remove('admin-boot');
+}
+
 /* ==============================================
    NAVIGATION
    ============================================== */
@@ -3633,7 +3712,7 @@ async function renderDash(){
 }
 
 // ── MAINTENANCE FEE ─────────────────────────────────────────
-let _maintRate = 5; // cached from DB settings
+let _maintRate = 0; // cached from DB settings
 let _maintFeeType = 'per_hour'; // selected booking fee charging method
 
 function toggleMaintBreakdown() {
@@ -3651,10 +3730,13 @@ async function renderMaintFee() {
 
   // Load rate and charging method from DB settings.
   const settings = await DB.getSettings();
-  _maintRate = parseFloat(settings.maintenance_fee ?? settings.service_fee_rate ?? settings.booking_fee ?? '5');
+  const configuredRate = readPlatformFeeAmount(settings);
+  _maintRate = configuredRate ?? 0;
   _maintFeeType = normalizePlatformFeeType(settings.fee_type);
   const isFlat = _maintFeeType === 'flat';
-  if ($('mfRateDisplay')) $('mfRateDisplay').textContent = isFlat ? `₱${_maintRate.toFixed(2)} / transaction` : `₱${_maintRate.toFixed(2)} / hr`;
+  if ($('mfRateDisplay')) {
+    $('mfRateDisplay').textContent = configuredRate == null ? '—' : (isFlat ? `₱${_maintRate.toFixed(2)} / transaction` : `₱${_maintRate.toFixed(2)} / hr`);
+  }
 
   const bks = await DB.getBookings();
   // Only bill confirmed/completed platform bookings made in the selected month.
@@ -3667,10 +3749,14 @@ async function renderMaintFee() {
   const filteredTxns = groupBookings(filtered);
   const totalBookings = filteredTxns.length;
   const totalHours = filtered.reduce((s, b) => s + (parseInt(b.duration) || 0), 0);
-  const totalFee = isFlat ? totalBookings * _maintRate : totalHours * _maintRate;
+  const grossFee = isFlat ? totalBookings * _maintRate : totalHours * _maintRate;
+  const processorFee = filteredTxns.reduce((sum, group) => sum + bookingGroupProcessorFeeAmount(group), 0);
+  const totalFee = netPlatformFeeAmount(grossFee, processorFee);
 
   $('mfBookings').textContent = totalBookings;
   $('mfHours').textContent = totalHours;
+  if ($('mfGrossFee')) $('mfGrossFee').textContent = fmt(grossFee);
+  if ($('mfProcessorFee')) $('mfProcessorFee').textContent = fmt(processorFee);
   $('mfFee').textContent = fmt(totalFee);
 
   // Breakdown by court
@@ -3999,11 +4085,11 @@ function clearFilters(){
 
 /* ── CALENDAR VIEW ── */
 function paymentMethodLabel(m) {
-  return ({ gcash: 'GCash', bdopay: 'BDO Pay', maya: 'Maya', gotyme: 'GoTyme', pnb: 'PNB', cash: 'Cash' }[String(m || '').toLowerCase()] || (m || 'Cash'));
+  return ({ gcash: 'GCash', qrph: 'QR Ph', paymongo: 'PayMongo', paymongo_qrph: 'PayMongo QR Ph', bdopay: 'BDO Pay', maya: 'Maya', gotyme: 'GoTyme', pnb: 'PNB', cash: 'Cash' }[String(m || '').toLowerCase()] || (m || 'Cash'));
 }
 
 function isDigitalPayment(m) {
-  return ['gcash', 'bdopay', 'maya', 'gotyme', 'pnb'].includes(String(m || '').toLowerCase());
+  return ['gcash', 'qrph', 'paymongo', 'paymongo_qrph', 'bdopay', 'maya', 'gotyme', 'pnb'].includes(String(m || '').toLowerCase());
 }
 
 function receivedAccountKey(b) {
@@ -5685,6 +5771,8 @@ function renderReportBars(targetId, entries, emptyCopy = 'No bookings in this pe
 
 async function renderReport(){
   const allBks=await DB.getBookings();
+  const settings=await DB.getSettings();
+  const feeCfg=getPlatformFeeConfig(settings);
   const{from,to}=_rpDateRange();
   syncReportPeriodUi({ from, to });
   // Reports start from online system usage only. Manual spreadsheet imports
@@ -5694,40 +5782,40 @@ async function renderReport(){
   if(to)   bks=bks.filter(b=>b.date<=to);
   const txns = groupBookings(bks);
   _rpBks=txns;
+  if ($('rpTitle')) $('rpTitle').textContent = sess?.role === 'court_owner' ? '📈 COURT OWNER REPORTS' : '📈 REVENUE REPORTS';
 
-  // Gross revenue = only from confirmed/completed online bookings
-  const gross=txns.reduce((s,b)=>s+(b.total||0),0);
-  const collected=txns.filter(b=>b.paymentStatus==='paid').reduce((s,b)=>s+(b.total||0),0);
-  const pending=txns.filter(b=>!b.paymentStatus||b.paymentStatus==='unpaid'||b.paymentStatus==='downpayment_paid').reduce((s,b)=>s+(b.total||0),0);
-  $('rpGross').textContent=fmtReportMoney(gross);
-  $('rpCollected').textContent=fmtReportMoney(collected);
-  $('rpPending').textContent=fmtReportMoney(pending);
+  const totalCollected=txns.reduce((s,b)=>s+(Number(b.total)||0),0);
+  const courtRevenue=txns.reduce((s,b)=>s+calcCourtRevenueForGroup(b, feeCfg),0);
+  const bookedHours=bks.reduce((s,b)=>s+bookingBillableHours(b),0);
+  $('rpGross').textContent=fmtReportMoney(totalCollected);
+  $('rpCollected').textContent=fmtReportMoney(courtRevenue);
+  $('rpPending').textContent=bookedHours;
   $('rpCount').textContent=txns.length;
 
-  // Revenue by court
+  // Court-owner revenue by court after the developer booking fee.
   const courtMap={};
-  bks.forEach(b=>{const k=b.courtName||'Unknown Court';courtMap[k]=(courtMap[k]||0)+(b.total||0);});
+  txns.forEach(b=>{const k=b.courtName||'Unknown Court';courtMap[k]=(courtMap[k]||0)+calcCourtRevenueForGroup(b, feeCfg);});
   const courtEntries=Object.entries(courtMap).sort((a,b)=>b[1]-a[1]);
   renderReportBars('rpCourtChart', courtEntries);
 
   // Revenue by how the player paid. This is kept separate from where the money
   // is ultimately recorded so receipt verification remains accurate.
   const payMap={};
-  txns.forEach(b=>{const k=paymentMethodLabel(b.paymentMethod);payMap[k]=(payMap[k]||0)+(b.total||0);});
+  txns.forEach(b=>{const k=paymentMethodLabel(b.paymentMethod);payMap[k]=(payMap[k]||0)+(Number(b.total)||0);});
   const payEntries=Object.entries(payMap).sort((a,b)=>b[1]-a[1]);
   renderReportBars('rpPayChart', payEntries);
 
   // Accounting view: all current digital payment rails settle/are recorded to GCash.
   const receivedMap={};
-  txns.forEach(b=>{const k=receivedAccountLabel(b);receivedMap[k]=(receivedMap[k]||0)+(b.total||0);});
+  txns.forEach(b=>{const k=receivedAccountLabel(b);receivedMap[k]=(receivedMap[k]||0)+(Number(b.total)||0);});
   const receivedEntries=Object.entries(receivedMap).sort((a,b)=>b[1]-a[1]);
   renderReportBars('rpReceivedChart', receivedEntries);
 
-  // Monthly trend follows the active report filter and shows booked months with revenue.
+  // Monthly trend follows the active report filter and shows owner revenue.
   const monthMap={};
   txns.forEach(b=>{
     const mk=(b.date||'').substring(0,7);
-    if(mk) monthMap[mk]=(monthMap[mk]||0)+(b.total||0);
+    if(mk) monthMap[mk]=(monthMap[mk]||0)+calcCourtRevenueForGroup(b, feeCfg);
   });
   const months=Object.keys(monthMap).sort().slice(-12).map(key=>{
     const [y,m]=key.split('-').map(Number);
@@ -5915,8 +6003,9 @@ function fmtH(h) {
 
 async function renderMaintRateSettings() {
   const settings = await DB.getSettings();
-  const rate = parseFloat(settings.maintenance_fee ?? settings.service_fee_rate ?? settings.booking_fee ?? '5');
-  if ($('maintRateInput')) $('maintRateInput').value = rate;
+  const configuredRate = readPlatformFeeAmount(settings);
+  const rate = configuredRate ?? 0;
+  if ($('maintRateInput')) $('maintRateInput').value = configuredRate == null ? '' : rate;
   const feeType = normalizePlatformFeeType(settings.fee_type);
   const ftEl = document.querySelector(`input[name="feeType"][value="${feeType}"]`);
   if (ftEl) ftEl.checked = true;
@@ -6325,11 +6414,13 @@ async function generateWeeklyStatement() {
     const eligibleGroups = groupBookings(eligible);
     const billedRefs = eligibleGroups.flatMap(g => g.refs || [g.ref]).filter(Boolean);
     const bookingsCount = eligibleGroups.length;
-    const amountDue = eligibleGroups.reduce((sum, g) => {
+    const grossAmountDue = eligibleGroups.reduce((sum, g) => {
       return sum + (feeCfg.type === 'flat'
         ? feeCfg.amount
         : (g.items || [g]).reduce((s, b) => s + calcPlatformFeeForBooking(b, feeCfg), 0));
     }, 0);
+    const processorFeeDue = eligibleGroups.reduce((sum, g) => sum + bookingGroupProcessorFeeAmount(g), 0);
+    const amountDue = netPlatformFeeAmount(grossAmountDue, processorFeeDue);
 
     const due = new Date(end);
     due.setDate(end.getDate() + 5); // five days after month end
@@ -8455,6 +8546,7 @@ document.addEventListener('DOMContentLoaded', async ()=>{
   // Show agreement gate for court_owner before entering dashboard
   const gated = await checkAgreementGate(sess);
   if (!gated) await goto(firstAllowed);
+  setAdminReady();
   startAdminRealtime();
   // Housekeeping: purge old abandoned slot-holds so the table stays tidy.
   // Runs in the background (admin is authenticated, so DELETE is permitted by RLS).
@@ -8718,6 +8810,7 @@ async function submitAgreement() {
     const role = session.role;
     const firstAllowed = Auth.can('dashboard', role) ? 'dash' : Auth.can('bookings', role) ? 'bookings' : 'payments';
     await goto(firstAllowed);
+    setAdminReady();
   } catch(e) {
     errEl.textContent = 'Failed to save agreement: ' + (e.message || 'Unknown error. Please try again.');
     errEl.style.display = '';

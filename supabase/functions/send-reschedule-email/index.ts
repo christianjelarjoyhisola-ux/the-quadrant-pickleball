@@ -4,7 +4,7 @@ const corsHeaders = {
 };
 
 const LOGO_URL = Deno.env.get("APP_LOGO_URL") || "https://replace-with-domain/the-quadrant-logo.jpg";
-const VENUE_LOCATION = Deno.env.get("APP_LOCATION") || "Dauman, Montevista";
+const VENUE_LOCATION = Deno.env.get("APP_LOCATION") || "New Visayas, Montevista";
 
 type Payload = {
   bookingRef: string;

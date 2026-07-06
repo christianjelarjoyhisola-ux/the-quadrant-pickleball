@@ -1,4 +1,4 @@
-# Changelog — The Quadrant (Dauman, Montevista)
+# Changelog — The Quadrant (New Visayas, Montevista)
 
 All notable changes to this project are documented here.
 Format: `[YYYY-MM-DD] — Type: Description (files affected)`

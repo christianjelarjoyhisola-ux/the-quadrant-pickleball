@@ -2836,7 +2836,7 @@ body.light #splashScreen { background: #071320; }
 <!-- COURTS -->
 <div class="sec" id="courts" style="padding-top:24px">
   <div class="sec-hd">
-    <h2> SELECT A COURT</h2>
+    <h2>SELECT A COURT</h2>
     <p>Tap an Open Play session or choose any available court hours, then continue.</p>
   </div>
   <div class="find-time-entry">
@@ -2846,7 +2846,7 @@ body.light #splashScreen { background: #071320; }
     </div>
     <button class="btn btn-p btn-sm" type="button" onclick="openFindTimeModal()">Search</button>
   </div>
-  <div class="court-tabs-hint"> Tap a court to view available times </div>
+  <div class="court-tabs-hint">Tap a court to view available times</div>
   <div class="shared-date-entry">
     <div class="shared-date-title">
       <strong>Booking date</strong>
@@ -3220,7 +3220,7 @@ body.light #splashScreen { background: #071320; }
                 <input type="text" class="fi" id="bGcashRef" placeholder="e.g. 1234567890123"
                   style="flex:1;" maxlength="13" autocomplete="off"
                   oninput="updateRefCount()" inputmode="numeric" />
-                <button type="button" class="gc-copy-btn" onclick="pasteRef()" style="background:var(--input);color:var(--text);border:1px solid var(--border);flex-shrink:0;"> Paste</button>
+                <button type="button" class="gc-copy-btn" onclick="pasteRef()" style="background:var(--input);color:var(--text);border:1px solid var(--border);flex-shrink:0;">Paste</button>
               </div>
               <div class="bpay-help" id="bRefHelp">
                 GCash reference must be exactly 13 digits.
@@ -3280,10 +3280,10 @@ body.light #splashScreen { background: #071320; }
 <div class="sec">
   <div class="sec-hd"><h2>HOW IT WORKS</h2></div>
   <div class="how">
-    <div class="hc"><div class="hc-ic"></div><div class="hc-tt">Pick a Court</div><div class="hc-ds">Browse courts and compare rates and features.</div></div>
-    <div class="hc"><div class="hc-ic"></div><div class="hc-tt">Choose Your Time</div><div class="hc-ds">Select a date and any available time slots from 6 AM to 10 PM.</div></div>
-    <div class="hc"><div class="hc-ic"></div><div class="hc-tt">Fill in Details</div><div class="hc-ds">Enter your contact info and preferred payment method.</div></div>
-    <div class="hc"><div class="hc-ic"></div><div class="hc-tt">Get Confirmed</div><div class="hc-ds">Receive your booking reference and invoice instantly.</div></div>
+    <div class="hc"><div class="hc-ic">01</div><div class="hc-tt">Pick a Court</div><div class="hc-ds">Browse courts and compare rates and features.</div></div>
+    <div class="hc"><div class="hc-ic">02</div><div class="hc-tt">Choose Your Time</div><div class="hc-ds">Select a date and any available time slots from 6 AM to 10 PM.</div></div>
+    <div class="hc"><div class="hc-ic">03</div><div class="hc-tt">Fill in Details</div><div class="hc-ds">Enter your contact info and preferred payment method.</div></div>
+    <div class="hc"><div class="hc-ic">04</div><div class="hc-tt">Get Confirmed</div><div class="hc-ds">Receive your booking reference and invoice instantly.</div></div>
   </div>
 </div>
 
@@ -3394,7 +3394,7 @@ body.light #splashScreen { background: #071320; }
   <div class="bk-modal op-modal">
     <div class="bk-modal-hd" style="background:linear-gradient(135deg,rgba(var(--lime-rgb),.1),transparent)">
       <div>
-        <div class="bk-modal-court" style="color:var(--lime-ink)"> Join Open Play</div>
+        <div class="bk-modal-court" style="color:var(--lime-ink)">Join Open Play</div>
         <div class="bk-modal-meta" id="opModalMeta">—</div>
       </div>
       <div class="op-spots-badge" id="opSpotsBadge">-- spots</div>
@@ -3403,7 +3403,7 @@ body.light #splashScreen { background: #071320; }
     <div class="bk-modal-body" id="opModalBody"></div>
     <div class="bk-modal-ft" id="opModalFt">
       <button class="btn" style="border:1.5px solid var(--border);color:var(--muted);background:transparent" onclick="closeOpModal()">Cancel</button>
-      <button class="btn btn-g" id="opSubmitBtn" onclick="submitOpenPlay()"> Join Open Play</button>
+      <button class="btn btn-g" id="opSubmitBtn" onclick="submitOpenPlay()">Join Open Play</button>
     </div>
   </div>
 </div>
@@ -4558,10 +4558,10 @@ function courtAvailabilityBadge({ blocked, date, allSlots, curHour, bookedHours,
   const openPlayHours = activeHours.filter(h => isOpenPlayHour(date, h, courtId));
   const availableRegular = regularHours.filter(h => !bookedHours.has(h)).length;
 
-  if (availableRegular > 0) return { cls: 'av', text: ` ${availableRegular} available` };
-  if (regularHours.length === 0 && openPlayHours.length > 0) return { cls: 'av', text: ' Open Play only' };
+  if (availableRegular > 0) return { cls: 'av', text: `${availableRegular} available` };
+  if (regularHours.length === 0 && openPlayHours.length > 0) return { cls: 'av', text: 'Open Play only' };
   if (activeHours.length === 0) return { cls: 'done', text: isPastDate_ ? 'Past date' : 'Done today' };
-  return { cls: 'full', text: ' Fully booked' };
+  return { cls: 'full', text: 'Fully booked' };
 }
 
 function openPlaySessionHtml({ courtId, courtName, courtLabel = '', date, session, spotsLeft, maxPlayers, compact = false }) {
@@ -4650,6 +4650,17 @@ function jsArg(v) {
   return esc(String(v ?? '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\r/g, '\\r').replace(/\n/g, '\\n'));
 }
 
+
+function uiIcon(name, extraClass = '') {
+  const icons = {
+    court: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 4v16"/><path d="M3 12h18"/>',
+    clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  };
+  const icon = icons[name] || icons.court;
+  const cls = extraClass ? 'ui-icon ' + extraClass : 'ui-icon';
+  return '<svg class="' + cls + '" viewBox="0 0 24 24" aria-hidden="true">' + icon + '</svg>';
+}
+
 function toast(msg, type='ok') {
   const icons = {ok:'', err:'', inf:''};
   const el = document.createElement('div');
@@ -4662,7 +4673,7 @@ function toast(msg, type='ok') {
 
 function copyToClipboard(text) {
   navigator.clipboard.writeText(text).then(() => {
-    toast(' Copied to clipboard!', 'ok');
+    toast('Copied to clipboard!', 'ok');
   }).catch(() => {
     // Fallback for older browsers
     const el = document.createElement('textarea');
@@ -4671,7 +4682,7 @@ function copyToClipboard(text) {
     el.select();
     document.execCommand('copy');
     document.body.removeChild(el);
-    toast(' Copied to clipboard!', 'ok');
+    toast('Copied to clipboard!', 'ok');
   });
 }
 
@@ -6266,11 +6277,11 @@ function updateWiz3SummaryLegacy() {
   const dateStr = $('bDate').value ? fmtD($('bDate').value) : '—';
   $('wiz3Summary').innerHTML = [
     ` ${court ? court.name : '—'}`,
-    ` ${dateStr}`,
-    mn !== null ? ` ${timeLabel} &nbsp;(${hrs} hr${hrs !== 1 ? 's' : ''})${separateNote}` : '',
-    ` Court Fee: <strong style="color:var(--muted)">${fmt(courtTotal)}</strong>`,
-    svcFee > 0 ? ` Booking Fee: <strong style="color:var(--muted)">${bookingFeeDisplay(svcFee, hrs)}</strong>` : ``,
-    ` Total: <strong style="color:var(--accent)">${fmt(total)}</strong>`,
+    `Date: ${dateStr}`,
+    mn !== null ? `Time: ${timeLabel} &nbsp;(${hrs} hr${hrs !== 1 ? 's' : ''})${separateNote}` : '',
+    `Court Fee: <strong style="color:var(--muted)">${fmt(courtTotal)}</strong>`,
+    svcFee > 0 ? `Booking Fee: <strong style="color:var(--muted)">${bookingFeeDisplay(svcFee, hrs)}</strong>` : ``,
+    `Total: <strong style="color:var(--accent)">${fmt(total)}</strong>`,
   ].filter(Boolean).map(s => `<div>${s}</div>`).join('');
 }
 
@@ -6479,7 +6490,7 @@ async function renderCourts() {
       <!-- MOBILE-ONLY HEADER -->
       <div class="cc-mobile-hd">
         <div class="cc-mobile-title">
-          <span class="cc-mobile-name"> ${esc(c.name)}</span>
+          <span class="cc-mobile-name">${uiIcon('court')} ${esc(c.name)}</span>
           <span class="cc-mobile-meta">${esc(rateRange)} · ${esc(c.desc || 'Court')}</span>
         </div>
         <div class="cc-mobile-side">
@@ -6501,7 +6512,7 @@ async function renderCourts() {
       <div class="cc-times">
         <div class="cc-times-head">
           <div>
-            <div class="cc-times-title"> Available times</div>
+            <div class="cc-times-title">${uiIcon('clock')} Available times</div>
             <div class="cc-times-sub">Join Open Play or select any available court slots</div>
           </div>
           <input type="hidden" id="cDate_${esc(c.id)}" value="${esc(selectedDate)}" />
@@ -6752,16 +6763,16 @@ async function renderSlots() {
   }
 
   const liveNote = todayFlag
-    ? `<div class="slots-live-note"> Live · ${availCount} slot${availCount !== 1 ? 's' : ''} available · Now: ${fmtT(curHour)}</div>`
-    : `<div class="slots-live-note" style="color:#4fc3f7;background:rgba(79,195,247,.07);border-color:rgba(79,195,247,.2)"> ${availCount} slot${availCount !== 1 ? 's' : ''} available on this date</div>`;
+    ? `<div class="slots-live-note">Live · ${availCount} slot${availCount !== 1 ? 's' : ''} available · Now: ${fmtT(curHour)}</div>`
+    : `<div class="slots-live-note" style="color:#4fc3f7;background:rgba(79,195,247,.07);border-color:rgba(79,195,247,.2)">${availCount} slot${availCount !== 1 ? 's' : ''} available on this date</div>`;
 
   const legend = `
     <div class="slot-legend">
-      <span class="leg"> Available</span>
-      <span class="leg" style="color:var(--slot-selected)"> Selected</span>
-      <span class="leg" style="color:var(--red)"> Booked</span>
-      ${hasMaint ? '<span class="leg" style="color:#ff9800"> Maintenance</span>' : ''}
-      ${todayFlag ? '<span class="leg" style="color:var(--muted)"> Past</span><span class="leg" style="color:#4fc3f7"> Now</span>' : ''}
+      <span class="leg">Available</span>
+      <span class="leg" style="color:var(--slot-selected)">Selected</span>
+      <span class="leg" style="color:var(--red)">Booked</span>
+      ${hasMaint ? '<span class="leg" style="color:#ff9800">Maintenance</span>' : ''}
+      ${todayFlag ? '<span class="leg" style="color:var(--muted)">Past</span><span class="leg" style="color:#4fc3f7">Now</span>' : ''}
     </div>`;
 
   g.innerHTML = liveNote + legend + `<div class="slots-grid">${openPlayBlock}${slotHtml}</div>`;
@@ -7210,7 +7221,7 @@ async function submitBookingLegacy(e) {
     if (fail) {
       const message = typeof msg === 'function' ? msg() : msg;
       bookingValidationError(message, target, step);
-      if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = ' Confirm Booking'; }
+      if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Confirm Booking'; }
       return;
     }
   }
@@ -7282,7 +7293,7 @@ async function submitBookingLegacy(e) {
         // for the rejected booking's date so the slot turns free right away.
         await renderCourts();
         onCardDate(booking.courtId, booking.date).catch(() => {});
-        if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = ' Confirm Booking'; }
+        if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Confirm Booking'; }
         return;
       } else if (ocrStatus === 'auto_approved') {
         booking.status = 'confirmed';
@@ -7327,7 +7338,7 @@ async function submitBookingLegacy(e) {
       // Do not proceed to confirmation UI if checkout could not be launched.
       if (submitBtn) {
         submitBtn.disabled = false;
-        submitBtn.textContent = ' Confirm Booking';
+        submitBtn.textContent = 'Confirm Booking';
       }
       return;
     }
@@ -7343,7 +7354,7 @@ async function submitBookingLegacy(e) {
   } finally {
     if (submitBtn) {
       submitBtn.disabled = false;
-      submitBtn.textContent = ' Confirm Booking';
+      submitBtn.textContent = 'Confirm Booking';
     }
   }
 }
@@ -8407,7 +8418,7 @@ async function openPlaySignup(courtId, date, h, courtName) {
     </div>`;
   $('opModalFt').innerHTML = `
     <button class="btn" style="border:1.5px solid var(--border);color:var(--muted);background:transparent" onclick="closeOpModal()">Cancel</button>
-    <button class="btn btn-g" id="opSubmitBtn" onclick="submitOpenPlay()"> Join Open Play</button>`;
+    <button class="btn btn-g" id="opSubmitBtn" onclick="submitOpenPlay()">Join Open Play</button>`;
   opPickPay(defaultPayMethod);
   // Auto-set DP based on payment acceptance mode
   if (dpOnly || fpOnly) {
@@ -8797,7 +8808,7 @@ async function submitOpenPlay() {
           receiptVerifiedAt: receiptResult.receiptVerifiedAt,
         });
         toast('Receipt could not be verified: ' + receiptResult.message, 'err');
-        if (btn) { btn.disabled = false; btn.textContent = ' Join Open Play'; }
+        if (btn) { btn.disabled = false; btn.textContent = 'Join Open Play'; }
         return;
       }
       regPayStatus = receiptResult.status === 'auto_approved' ? 'paid' : 'pending';
@@ -8892,7 +8903,7 @@ async function submitOpenPlay() {
     const msg = err instanceof Error ? err.message : JSON.stringify(err);
     console.error('submitOpenPlay error:', err);
     toast('Error: ' + msg, 'err');
-    if (btn) { btn.disabled = false; btn.textContent = ' Join Open Play'; }
+    if (btn) { btn.disabled = false; btn.textContent = 'Join Open Play'; }
   }
 }
 </script>

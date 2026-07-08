@@ -1351,6 +1351,7 @@ window.DB = {
   const defaultSettings = () => ({
     open_hour: '6',
     close_hour: '24',
+    operating_windows: JSON.stringify([{ from: 6, to: 24 }]),
     open_play_config: JSON.stringify({
       enabled: true,
       start: 6,

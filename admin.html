@@ -1966,17 +1966,11 @@ tr:hover td { background: var(--bg2); }
       <!-- OPERATING HOURS PANEL -->
       <div class="panel" style="margin-bottom:20px;border:1px solid var(--border);">
         <h4>⏰ Operating Hours</h4>
-        <p style="color:var(--muted);font-size:.84rem;margin:8px 0 16px">Set the daily open and close time for all courts. Changes apply immediately to the booking page.</p>
-        <div style="display:flex;gap:16px;align-items:flex-end;flex-wrap:wrap">
-          <div>
-            <label class="fl">Open Time</label>
-            <select class="fi" id="ohOpen" style="width:auto;min-width:130px"></select>
-          </div>
-          <div>
-            <label class="fl">Close Time</label>
-            <select class="fi" id="ohClose" style="width:auto;min-width:130px"></select>
-          </div>
-          <button class="btn btn-p btn-sm" onclick="saveHours()" style="margin-bottom:1px">💾 Save Hours</button>
+        <p style="color:var(--muted);font-size:.84rem;margin:8px 0 16px">Set one or more daily bookable windows for all courts. Use separate rows for split hours like morning and evening sessions.</p>
+        <div id="ohWindowsBody"></div>
+        <div style="display:flex;gap:10px;margin-top:14px;flex-wrap:wrap">
+          <button class="btn btn-g btn-sm" onclick="addHoursWindowRow()">+ Add Window</button>
+          <button class="btn btn-p btn-sm" onclick="saveHours()">💾 Save Hours</button>
         </div>
         <div id="ohSummary" style="margin-top:12px;padding:10px 14px;background:var(--input);border:1px solid var(--border);border-radius:8px;font-size:.84rem;color:var(--muted);display:none"></div>
       </div>
@@ -4305,6 +4299,7 @@ async function renderCalendar(){
 
   _nbOpenHour = parseInt(settings.open_hour || '6');
   _nbCloseHour = parseInt(settings.close_hour || '22');
+  _nbOperatingWindows = parseOperatingWindows(settings);
   try { _nbOpenPlayCfg = settings.open_play_config ? JSON.parse(settings.open_play_config) : null; } catch(e) { _nbOpenPlayCfg = null; }
   try { _nbMaintenanceCfg = settings.maintenance_config ? JSON.parse(settings.maintenance_config) : null; } catch(e) { _nbMaintenanceCfg = null; }
   _nbPricingTiers = parsePricingTiers(settings.pricing_tiers);
@@ -4527,7 +4522,7 @@ function renderCalendarDayPanel(dateStr, bookings = [], bkMap = {}, courts = [])
   });
   const slotCounts = { available: 0, confirmed: 0, completed: 0, pending: 0, verifying: 0, blocked: 0, past: 0 };
   const hours = [];
-  for (let h = _nbOpenHour; h < _nbCloseHour; h++) hours.push(h);
+  for (const h of _nbBookableHours()) hours.push(h);
   const boardCells = [];
   hours.forEach(hour => {
     boardCells.push(`<div class="cal-time-cell">${calShortRange(hour)}</div>`);
@@ -4756,6 +4751,8 @@ const nbGenRef = () => 'TQ-' + Date.now().toString(36).toUpperCase() + '-' + Mat
 let _nbCourts = [];
 let _nbSelSlots = [];
 let _nbOpenHour = 6, _nbCloseHour = 22;
+let _nbOperatingWindows = [{ from: 6, to: 22 }];
+function _nbBookableHours() { return operatingWindowHours(_nbOperatingWindows); }
 let _nbOpenPlayCfg = null;
 let _nbMaintenanceCfg = null;
 let _nbPricingTiers = [];
@@ -4775,6 +4772,7 @@ async function openNewBookingModal() {
   const settings = await DB.getSettings();
   _nbOpenHour = parseInt(settings.open_hour || '6');
   _nbCloseHour = parseInt(settings.close_hour || '22');
+  _nbOperatingWindows = parseOperatingWindows(settings);
   try { _nbOpenPlayCfg = settings.open_play_config ? JSON.parse(settings.open_play_config) : null; } catch(e) { _nbOpenPlayCfg = null; }
   try { _nbMaintenanceCfg = settings.maintenance_config ? JSON.parse(settings.maintenance_config) : null; } catch(e) { _nbMaintenanceCfg = null; }
   _nbPricingTiers = parsePricingTiers(settings.pricing_tiers);
@@ -4906,7 +4904,7 @@ async function nbRenderSlots() {
   let hasMaint = false;
   let html = '';
 
-  for (let h = _nbOpenHour; h < _nbCloseHour; h++) {
+  for (const h of _nbBookableHours()) {
     const isPast = isToday && h < curHour;
     const isNow = isToday && h === curHour;
     const isBooked = _nbBookedSlots.has(h);
@@ -4966,6 +4964,7 @@ function nbToggleSlot(h) {
   const curHour = now.getHours();
 
   if (_nbBookedSlots.has(h)) { toast('This slot is already booked.', 'err'); return; }
+  if (!_nbBookableHours().includes(Number(h))) { toast('This time is outside operating hours.', 'inf'); return; }
   if (isToday && h < curHour) { toast('This time has passed.', 'err'); return; }
   if (isToday && h === curHour) { toast('This hour is in progress.', 'inf'); return; }
   if (_nbIsOpenPlayHour(date, h, courtId)) { toast('Reserved for Open Play.', 'inf'); return; }
@@ -5274,6 +5273,7 @@ async function openNewBookingModal() {
   const settings = await DB.getSettings();
   _nbOpenHour = parseInt(settings.open_hour || '6', 10);
   _nbCloseHour = parseInt(settings.close_hour || '22', 10);
+  _nbOperatingWindows = parseOperatingWindows(settings);
   try { _nbOpenPlayCfg = settings.open_play_config ? JSON.parse(settings.open_play_config) : null; } catch (e) { _nbOpenPlayCfg = null; }
   try { _nbMaintenanceCfg = settings.maintenance_config ? JSON.parse(settings.maintenance_config) : null; } catch (e) { _nbMaintenanceCfg = null; }
   _nbPricingTiers = parsePricingTiers(settings.pricing_tiers);
@@ -5337,7 +5337,7 @@ async function nbRenderSlots() {
   </div>`;
 
   let rows = '';
-  for (let hour = _nbOpenHour; hour < _nbCloseHour; hour += 1) {
+  for (const hour of _nbBookableHours()) {
     rows += `<div class="nb-slot-row"><div class="nb-slot-time-col">${fmtHour(hour)}</div>`;
     courts.forEach(court => {
       const key = nbCellKey(court.id, hour);
@@ -5379,6 +5379,7 @@ function nbToggleSlot(courtId, hour) {
   const date = $('nbDate')?.value;
   const court = _nbCourts.find(c => String(c.id) === String(courtId));
   if (!date || !court) return;
+  if (!_nbBookableHours().includes(Number(hour))) { toast('This time is outside operating hours.', 'inf'); return; }
   const state = nbSlotState(court, date, Number(hour));
   if (state.unavailable) {
     toast(`This slot is ${state.label.toLowerCase()}.`, 'inf');
@@ -6001,6 +6002,47 @@ function fmtH(h) {
   return `${h % 12 || 12}:00 ${h < 12 ? 'AM' : 'PM'}`;
 }
 
+function compactFmtH(h) {
+  if (h === 0 || h === 24) return '12:00 AM';
+  return `${h % 12 || 12}:00 ${h < 12 ? 'AM' : 'PM'}`;
+}
+
+function parseOperatingWindows(settings = {}) {
+  let windows = [];
+  if (settings.operating_windows) {
+    try {
+      const parsed = JSON.parse(settings.operating_windows);
+      if (Array.isArray(parsed)) windows = parsed;
+    } catch (e) {}
+  }
+  if (!windows.length) {
+    const openHr = parseInt(settings.open_hour || '6', 10);
+    const closeHr = parseInt(settings.close_hour || '22', 10);
+    windows = [{ from: openHr, to: closeHr }];
+  }
+  return windows
+    .map(w => ({ from: parseInt(w.from, 10), to: parseInt(w.to, 10) }))
+    .filter(w => Number.isInteger(w.from) && Number.isInteger(w.to) && w.from >= 0 && w.from <= 23 && w.to >= 1 && w.to <= 24 && w.to > w.from)
+    .sort((a, b) => a.from - b.from || a.to - b.to);
+}
+
+function operatingWindowHours(windows) {
+  return [...new Set((windows || []).flatMap(w => Array.from({ length: w.to - w.from }, (_, i) => w.from + i)))].sort((a, b) => a - b);
+}
+
+function validateOperatingWindows(windows) {
+  if (!windows.length) return 'Add at least one operating window.';
+  for (let i = 0; i < windows.length; i += 1) {
+    const w = windows[i];
+    if (!Number.isInteger(w.from) || !Number.isInteger(w.to)) return 'Every window needs an open and close time.';
+    if (w.to <= w.from) return 'Close time must be later than open time for every window.';
+    if (i > 0 && w.from < windows[i - 1].to) return 'Operating windows cannot overlap.';
+  }
+  return '';
+}
+
+let adminOperatingWindows = [];
+
 async function renderMaintRateSettings() {
   const settings = await DB.getSettings();
   const configuredRate = readPlatformFeeAmount(settings);
@@ -6030,52 +6072,96 @@ function updateMaintRateLabel() {
 document.addEventListener('change', e => { if (e.target.name === 'feeType') updateMaintRateLabel(); });
 async function renderHours() {
   const settings = await DB.getSettings();
-  const openHr  = parseInt(settings.open_hour  || '6');
-  const closeHr = parseInt(settings.close_hour || '22');
-
-  const openSel  = $('ohOpen');
-  const closeSel = $('ohClose');
-  openSel.innerHTML  = '';
-  closeSel.innerHTML = '';
-
-  // Open: 12:00 AM (0) → 11:00 PM (23)
-  for (let h = 0; h <= 23; h++) {
-    openSel.innerHTML += `<option value="${h}" ${h === openHr ? 'selected' : ''}>${fmtH(h)}</option>`;
-  }
-  // Close: 1:00 AM (1) → 12:00 AM next day (24) — allows full 24-hr operation
-  for (let h = 1; h <= 24; h++) {
-    closeSel.innerHTML += `<option value="${h}" ${h === closeHr ? 'selected' : ''}>${fmtH(h)}</option>`;
-  }
-
-  updateHoursSummary(openHr, closeHr);
+  adminOperatingWindows = parseOperatingWindows(settings);
+  renderHoursWindowsUI();
+  updateHoursSummary(adminOperatingWindows);
 }
 
-function updateHoursSummary(openHr, closeHr) {
+function hourOptions(selected, min, max) {
+  return Array.from({ length: max - min + 1 }, (_, i) => {
+    const h = min + i;
+    return `<option value="${h}"${h === selected ? ' selected' : ''}>${fmtH(h)}</option>`;
+  }).join('');
+}
+
+function renderHoursWindowsUI() {
+  const body = $('ohWindowsBody');
+  if (!body) return;
+  body.innerHTML = adminOperatingWindows.map((w, i) => `
+    <div class="hours-window-row" data-idx="${i}" style="display:flex;gap:10px;align-items:flex-end;margin-bottom:10px;flex-wrap:wrap;padding:12px 14px;background:var(--input);border:1px solid var(--border);border-radius:9px">
+      <div>
+        <label class="fl">Open Time</label>
+        <select class="fi oh-from" style="width:auto;min-width:145px">${hourOptions(w.from, 0, 23)}</select>
+      </div>
+      <div>
+        <label class="fl">Close Time</label>
+        <select class="fi oh-to" style="width:auto;min-width:145px">${hourOptions(w.to, 1, 24)}</select>
+      </div>
+      <button class="btn btn-r btn-sm" onclick="removeHoursWindowRow(${i})" ${adminOperatingWindows.length === 1 ? 'disabled' : ''}>Remove</button>
+    </div>`).join('');
+}
+
+function addHoursWindowRow() {
+  const last = adminOperatingWindows[adminOperatingWindows.length - 1] || { from: 6, to: 8 };
+  const from = Math.min(23, Math.max(0, last.to < 24 ? last.to : 16));
+  const to = Math.min(24, from + 1);
+  adminOperatingWindows.push({ from, to });
+  renderHoursWindowsUI();
+  updateHoursSummary(readHoursWindowsFromUI({ sorted: false }));
+}
+
+function removeHoursWindowRow(index) {
+  if (adminOperatingWindows.length <= 1) return;
+  adminOperatingWindows.splice(index, 1);
+  renderHoursWindowsUI();
+  updateHoursSummary(readHoursWindowsFromUI({ sorted: false }));
+}
+
+function readHoursWindowsFromUI(opts = {}) {
+  const windows = [...document.querySelectorAll('#ohWindowsBody .hours-window-row')]
+    .map(row => ({
+      from: parseInt(row.querySelector('.oh-from')?.value || '', 10),
+      to: parseInt(row.querySelector('.oh-to')?.value || '', 10),
+    }))
+    .filter(w => Number.isInteger(w.from) && Number.isInteger(w.to));
+  return opts.sorted === false ? windows : windows.sort((a, b) => a.from - b.from || a.to - b.to);
+}
+
+function updateHoursSummary(windows) {
   const el = $('ohSummary');
-  const totalHrs = closeHr - openHr;
+  const normalized = (windows || []).filter(w => Number.isInteger(w.from) && Number.isInteger(w.to) && w.to > w.from);
+  const totalHrs = operatingWindowHours(normalized).length;
   if (totalHrs > 0) {
     el.style.display = 'block';
-    el.innerHTML = `⏰ Courts open <strong style="color:var(--green)">${fmtH(openHr)} – ${fmtH(closeHr)}</strong> &nbsp;·&nbsp; <strong style="color:var(--green)">${totalHrs}</strong> hour${totalHrs !== 1 ? 's' : ''}/day &nbsp;·&nbsp; ${totalHrs} bookable slots per court`;
+    const labels = normalized.map(w => `${compactFmtH(w.from)} - ${compactFmtH(w.to)}`).join(', ');
+    el.innerHTML = `Courts open <strong style="color:var(--green)">${labels}</strong> &nbsp;�&nbsp; <strong style="color:var(--green)">${totalHrs}</strong> hour${totalHrs !== 1 ? 's' : ''}/day &nbsp;�&nbsp; ${totalHrs} bookable slots per court`;
   } else {
     el.style.display = 'none';
   }
 }
 
 async function saveHours() {
-  const openHr  = parseInt($('ohOpen').value);
-  const closeHr = parseInt($('ohClose').value);
-  if (closeHr <= openHr) { toast('Close time must be later than open time.', 'err'); return; }
-  if (closeHr - openHr < 1) { toast('Must have at least 1 hour of operation.', 'err'); return; }
+  const windows = readHoursWindowsFromUI();
+  const validation = validateOperatingWindows(windows);
+  if (validation) { toast(validation, 'err'); return; }
   try {
-    await DB.saveSetting('open_hour',  String(openHr));
-    await DB.saveSetting('close_hour', String(closeHr));
-    updateHoursSummary(openHr, closeHr);
-    toast(`Hours saved: ${fmtH(openHr)} – ${fmtH(closeHr)}`);
+    await DB.saveSetting('operating_windows', JSON.stringify(windows));
+    await DB.saveSetting('open_hour',  String(windows[0].from));
+    await DB.saveSetting('close_hour', String(windows[windows.length - 1].to));
+    adminOperatingWindows = windows;
+    renderHoursWindowsUI();
+    updateHoursSummary(windows);
+    toast(`Hours saved: ${windows.map(w => `${compactFmtH(w.from)} - ${compactFmtH(w.to)}`).join(', ')}`);
   } catch(e) {
     toast('Failed to save hours.', 'err');
   }
 }
 
+document.addEventListener('change', e => {
+  if (e.target.classList?.contains('oh-from') || e.target.classList?.contains('oh-to')) {
+    updateHoursSummary(readHoursWindowsFromUI({ sorted: false }));
+  }
+});
 /* ==============================================
    PRICING TIERS
    ============================================== */

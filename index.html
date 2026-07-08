@@ -3522,6 +3522,7 @@ let wizStep = 1, wizStartStep = 1;
 let _lastSubmitAt = 0; // rate limiting — ms timestamp of last submission attempt
 let openHour  = 6;
 let closeHour = 22;
+let operatingWindows = [{ from: 6, to: 22 }];
 let openPlayConfig = null; // { enabled, start, end, days[], specificDates[], courtIds[], fee, maxPlayers }
 let openPlayFee = 100; // default ₱100, overridden by settings
 let openPlayMaxPlayers = 40; // default 40, overridden by settings
@@ -3547,6 +3548,33 @@ function bookingFeeDisplay(totalFee, hrs) {
     return `${fmt(fee)} (${fmt(_serviceFeeRate)}/hr × ${hours} hr${hours !== 1 ? 's' : ''})`;
   }
   return fmt(fee);
+}
+
+function parseOperatingWindows(settings = {}) {
+  let windows = [];
+  if (settings.operating_windows) {
+    try {
+      const parsed = JSON.parse(settings.operating_windows);
+      if (Array.isArray(parsed)) windows = parsed;
+    } catch (e) {}
+  }
+  if (!windows.length) windows = [{ from: openHour, to: closeHour }];
+  return windows
+    .map(w => ({ from: parseInt(w.from, 10), to: parseInt(w.to, 10) }))
+    .filter(w => Number.isInteger(w.from) && Number.isInteger(w.to) && w.from >= 0 && w.from <= 23 && w.to >= 1 && w.to <= 24 && w.to > w.from)
+    .sort((a, b) => a.from - b.from || a.to - b.to);
+}
+
+function bookableHours() {
+  return [...new Set((operatingWindows || []).flatMap(w => Array.from({ length: w.to - w.from }, (_, i) => w.from + i)))].sort((a, b) => a - b);
+}
+
+function isBookableHour(h) {
+  return bookableHours().includes(Number(h));
+}
+
+function operatingHoursLabel() {
+  return (operatingWindows || []).map(w => `${fmtT(w.from)} - ${fmtT(w.to)}`).join(', ');
 }
 
 function hostInviteHasBlockingModal() {
@@ -4702,6 +4730,7 @@ async function loadOperatingHours() {
   const settings = await DB.getSettings();
   openHour  = parseInt(settings.open_hour  || '6');
   closeHour = parseInt(settings.close_hour || '22');
+  operatingWindows = parseOperatingWindows(settings);
   if (settings.pricing_tiers) {
     try { pricingTiers = JSON.parse(settings.pricing_tiers); } catch(e) {}
   }
@@ -4720,7 +4749,7 @@ async function loadOperatingHours() {
   _serviceFeeType  = normalizePlatformFeeType(settings.fee_type);
   applyPaymentSettings(settings);
   const note = $('slotHoursNote');
-  if (note) note.textContent = `(${fmtT(openHour)} – ${fmtT(closeHour)} · select any available hours)`;
+  if (note) note.textContent = `(${operatingHoursLabel()} · select any available hours)`;
 }
 
 function applyPaymentSettings(settings) {
@@ -5273,14 +5302,15 @@ function populateFindTimeControls() {
   dateEl.min = today;
   if (!dateEl.value || dateEl.value < today) dateEl.value = cardSelectionDate() || today;
 
-  const latestStart = Math.max(openHour, closeHour - 1);
-  const preferredStart = Math.min(latestStart, Math.max(openHour, isToday(dateEl.value) ? nowHour() + 1 : openHour));
-  startEl.innerHTML = Array.from({ length: Math.max(0, closeHour - openHour) }, (_, i) => {
-    const h = openHour + i;
+  const hours = bookableHours();
+  const latestStart = hours.length ? hours[hours.length - 1] : openHour;
+  const firstStart = hours.length ? hours[0] : openHour;
+  const preferredStart = hours.find(h => h >= Math.max(firstStart, isToday(dateEl.value) ? nowHour() + 1 : firstStart)) || latestStart;
+  startEl.innerHTML = hours.map(h => {
     return `<option value="${h}"${h === preferredStart ? ' selected' : ''}>${fmtT(h)}</option>`;
   }).join('');
 
-  const maxDuration = Math.max(1, Math.min(4, closeHour - openHour));
+  const maxDuration = Math.max(1, Math.min(4, hours.length || 1));
   durEl.innerHTML = Array.from({ length: maxDuration }, (_, i) => {
     const hrs = i + 1;
     return `<option value="${hrs}">${hrs} hour${hrs !== 1 ? 's' : ''}</option>`;
@@ -5324,8 +5354,7 @@ function findTimeSlotsAvailable({ court, date, slots, bookedSet, blockedDates })
   const isPastDate = date < todayStr();
   const curHour = isToday(date) ? nowHour() : -1;
   return slots.every(h =>
-    h >= openHour &&
-    h < closeHour &&
+    isBookableHour(h) &&
     !isPastDate &&
     !(isToday(date) && h <= curHour) &&
     !bookedSet.has(Number(h)) &&
@@ -5345,7 +5374,7 @@ async function findAvailableTimeMatches(date, preferredStart, duration) {
   const matches = [];
   (courts || []).forEach(c => {
     const bookedSet = bookedByCourt.get(String(c.id)) || new Set();
-    for (let start = openHour; start + duration <= closeHour; start++) {
+    for (const start of bookableHours()) {
       const slots = Array.from({ length: duration }, (_, i) => start + i);
       if (!findTimeSlotsAvailable({ court: c, date, slots, bookedSet, blockedDates })) continue;
       const tiers = getPricingTiersForCourt(c);
@@ -5443,6 +5472,7 @@ async function selectFindTimeResult(courtId, date, start, duration) {
 async function toggleCardSlot(courtId, date, h) {
   if (date < todayStr()) { toast('Cannot book a past date.', 'err'); return; }
   await ensureCourt(courtId);
+  if (!isBookableHour(h)) { toast('This time is outside operating hours.', 'inf'); return; }
   if (isOpenPlayHour(date, h, courtId)) {
     openPlaySignup(courtId, date, h, court ? court.name : '');
     return;
@@ -6285,7 +6315,7 @@ async function onCardDate(courtId, date, options = {}) {
           }));
   const bookedHrs = new Set(Object.keys(slotNameMap).map(Number));
 
-  const allSlots = Array.from({length: closeHour - openHour}, (_, i) => i + openHour);
+  const allSlots = bookableHours();
   const isToday_ = date === todayStr();
   const isPastDate_ = date < todayStr();
   const curHour  = nowHour();
@@ -6375,7 +6405,7 @@ async function renderCourts() {
 
   courtsGrid.innerHTML = courts.map(c => {
     const blk = c.blocked;
-    const allSlots = Array.from({length: closeHour - openHour}, (_, i) => i + openHour);
+    const allSlots = bookableHours();
 
     // Build slot → booking name map
     const slotNameMap = {};
@@ -6515,7 +6545,7 @@ async function renderCourts() {
     const cur_   = curHour;
     const singleCourtTabs = courts.map(c => {
       const blk = c.blocked;
-      const allSl_ = Array.from({length: closeHour - openHour}, (_, i) => i + openHour);
+      const allSl_ = bookableHours();
       const booked_ = new Set(
         bookings.filter(b => b.courtId === c.id && b.date === today_ && b.status !== 'cancelled')
                 .flatMap(b => b.slots)
@@ -6661,7 +6691,7 @@ async function renderSlots() {
   selSlots = selSlots.filter(h => {
     const isPast = todayFlag && h < curHour;
     const isNow = todayFlag && h === curHour;
-    return !booked.has(h) && !isPast && !isNow && !isOpenPlayHour(date, h, court?.id) && !isMaintenanceHour(date, h, court?.id);
+    return isBookableHour(h) && !booked.has(h) && !isPast && !isNow && !isOpenPlayHour(date, h, court?.id) && !isMaintenanceHour(date, h, court?.id);
   });
 
   // Check if there's an Open Play session on this date and get registration count
@@ -6685,7 +6715,7 @@ async function renderSlots() {
   let hasMaint = false;
   let slotHtml = '';
 
-  for (let h = openHour; h < closeHour; h++) {
+  for (const h of bookableHours()) {
     const isPast      = todayFlag && h < curHour;
     const isNow       = todayFlag && h === curHour;
     const isBooked    = booked.has(h);
@@ -6746,6 +6776,7 @@ function toggleSlot(h) {
   const todayFlag = isToday(date);
 
   if (cachedBookedSlots.has(h)) { toast('This slot is already booked.', 'err'); return; }
+  if (!isBookableHour(h)) { toast('This time is outside operating hours.', 'inf'); return; }
   if (todayFlag && h < curHour) { toast('This time slot has already passed.', 'err'); return; }
   if (todayFlag && h === curHour) { toast('This hour is currently in progress — book the next available slot.', 'inf'); return; }
   if (isOpenPlayHour(date, h, court ? court.id : '')) {

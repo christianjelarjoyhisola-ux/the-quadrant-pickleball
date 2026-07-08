@@ -4651,16 +4651,6 @@ function jsArg(v) {
 }
 
 
-function uiIcon(name, extraClass = '') {
-  const icons = {
-    court: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M12 4v16"/><path d="M3 12h18"/>',
-    clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
-  };
-  const icon = icons[name] || icons.court;
-  const cls = extraClass ? 'ui-icon ' + extraClass : 'ui-icon';
-  return '<svg class="' + cls + '" viewBox="0 0 24 24" aria-hidden="true">' + icon + '</svg>';
-}
-
 function toast(msg, type='ok') {
   const icons = {ok:'', err:'', inf:''};
   const el = document.createElement('div');
@@ -6490,7 +6480,7 @@ async function renderCourts() {
       <!-- MOBILE-ONLY HEADER -->
       <div class="cc-mobile-hd">
         <div class="cc-mobile-title">
-          <span class="cc-mobile-name">${uiIcon('court')} ${esc(c.name)}</span>
+          <span class="cc-mobile-name">${esc(c.name)}</span>
           <span class="cc-mobile-meta">${esc(rateRange)} · ${esc(c.desc || 'Court')}</span>
         </div>
         <div class="cc-mobile-side">
@@ -6512,7 +6502,7 @@ async function renderCourts() {
       <div class="cc-times">
         <div class="cc-times-head">
           <div>
-            <div class="cc-times-title">${uiIcon('clock')} Available times</div>
+            <div class="cc-times-title">Available times</div>
             <div class="cc-times-sub">Join Open Play or select any available court slots</div>
           </div>
           <input type="hidden" id="cDate_${esc(c.id)}" value="${esc(selectedDate)}" />

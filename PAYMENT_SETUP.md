@@ -37,8 +37,12 @@ Required:
 
 PayMongo checkout:
 - `PAYMONGO_SECRET_KEY=sk_live_...` (or `sk_test_...`)
-- `PAYMENT_SUCCESS_URL=https://your-domain/success`
-- `PAYMENT_CANCEL_URL=https://your-domain/cancel`
+- `PAYMENT_SUCCESS_URL=https://your-domain/`
+- `PAYMENT_CANCEL_URL=https://your-domain/`
+
+The Edge Function appends `payment_result`, `booking_ref`, and `payment_session_id`
+to those URLs. When PayMongo redirects back with `payment_result=cancelled`, the
+app cancels the fresh temporary hold so the slot becomes available immediately.
 
 Optional security:
 - `PAYMENT_WEBHOOK_SECRET` (used by `payment-webhook` via `x-payment-signature` HMAC SHA-256)

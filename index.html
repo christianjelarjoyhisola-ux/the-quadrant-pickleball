@@ -5804,9 +5804,35 @@ function isHeldVerifying(b) {
 
 // True if this booking currently occupies its slot (confirmed/pending always do;
 // verifying only while still within its reservation window).
+const NON_HOLDING_PAYMENT_STATUSES = new Set(['failed', 'rejected', 'cancelled', 'canceled', 'expired']);
+const HOLDING_BOOKING_STATUSES = new Set(['pending', 'verifying', 'confirmed', 'completed']);
+
+function bookingStatusValue(b) {
+  return String(b?.status || '').toLowerCase();
+}
+
+function bookingPaymentStatusValue(b) {
+  return String(b?.paymentStatus ?? b?.payment_status ?? '').toLowerCase();
+}
+
+function bookingHasGatewaySession(b) {
+  return !!(
+    b?.paymentProvider ||
+    b?.payment_provider ||
+    b?.paymentSessionId ||
+    b?.payment_session_id ||
+    b?.paymentCheckoutUrl ||
+    b?.payment_checkout_url
+  );
+}
+
 function bookingHoldsSlot(b) {
-  if (b.status === 'cancelled') return false;
-  if (b.status === 'verifying') return isHeldVerifying(b);
+  const status = bookingStatusValue(b);
+  const paymentStatus = bookingPaymentStatusValue(b);
+  if (status === 'cancelled') return false;
+  if (NON_HOLDING_PAYMENT_STATUSES.has(paymentStatus)) return false;
+  if (!HOLDING_BOOKING_STATUSES.has(status)) return false;
+  if (status === 'verifying') return isHeldVerifying(b);
   if (isPendingPaymentHold(b)) return isHeldWithinReservationWindow(b);
   return true;
 }
@@ -6528,7 +6554,7 @@ async function renderCourts() {
     </div>`;
   }).join('');
 
-  const active = bookings.filter(b => b.status !== 'cancelled');
+  const active = bookings.filter(bookingHoldsSlot);
   const totalRev = fmt(active.reduce((s,b) => s+b.total, 0));
   if ($('sCourts')) $('sCourts').textContent = courts.length;
   if ($('sBook'))   $('sBook').textContent   = bookings.length;
@@ -6548,7 +6574,7 @@ async function renderCourts() {
       const blk = c.blocked;
       const allSl_ = bookableHours();
       const booked_ = new Set(
-        bookings.filter(b => b.courtId === c.id && b.date === today_ && b.status !== 'cancelled')
+        bookings.filter(b => b.courtId === c.id && b.date === today_ && bookingHoldsSlot(b))
                 .flatMap(b => b.slots)
       );
       const tabBadge = courtAvailabilityBadge({ blocked: blk, date: today_, allSlots: allSl_, curHour: cur_, bookedHours: booked_, courtId: c.id });
@@ -8087,7 +8113,7 @@ async function handlePaymentReturn() {
 
   dismissSplash();
   if (payment === 'cancelled') {
-    toast('QRPh checkout was cancelled. Your booking is still pending payment.', 'err');
+    toast('QRPh checkout was cancelled. Releasing the slot...', 'inf');
   } else {
     toast('Checking QRPh payment...', 'ok');
   }
@@ -8114,6 +8140,16 @@ async function handlePaymentReturn() {
   }
 
   if (booking) {
+    if (payment === 'cancelled') {
+      const status = bookingStatusValue(booking);
+      if (status !== 'confirmed' && status !== 'completed') {
+        await DB.updateBooking(bookingRef, { status: 'cancelled', paymentStatus: 'failed' }).catch(() => {});
+        booking.status = 'cancelled';
+        booking.paymentStatus = 'failed';
+        DB.clearCache?.(['bookings']);
+      }
+      toast('QRPh checkout was cancelled. The slot is available again.', 'inf');
+    }
     if (payment === 'success') {
       booking.paymentStatus = 'paid';
       booking.status = 'confirmed';

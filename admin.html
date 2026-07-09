@@ -3128,8 +3128,26 @@ function isPlaceholderHold(b) {
 function isCancelledBooking(b) {
   return String(b?.status || '').toLowerCase() === 'cancelled';
 }
+const ADMIN_NON_HOLDING_PAYMENT_STATUSES = new Set(['failed', 'rejected', 'cancelled', 'canceled', 'expired']);
+const ADMIN_HOLDING_BOOKING_STATUSES = new Set(['pending', 'verifying', 'confirmed', 'completed']);
+function adminBookingStatus(b) {
+  return String(b?.status || '').toLowerCase();
+}
+function adminPaymentStatus(b) {
+  return String(b?.paymentStatus ?? b?.payment_status ?? '').toLowerCase();
+}
+function adminHasGatewaySession(b) {
+  return !!(
+    b?.paymentProvider ||
+    b?.payment_provider ||
+    b?.paymentSessionId ||
+    b?.payment_session_id ||
+    b?.paymentCheckoutUrl ||
+    b?.payment_checkout_url
+  );
+}
 function isScheduleActiveBooking(b) {
-  return !isPlaceholderHold(b) && !isCancelledBooking(b);
+  return !isPlaceholderHold(b) && bookingHoldsAdminSlot(b);
 }
 function isPlatformBillableBooking(b) {
   return isDashboardReportBooking(b) &&
@@ -3139,11 +3157,17 @@ function isDashboardReportBooking(b) {
   return !isPlaceholderHold(b) && !isManualImportBooking(b);
 }
 function isDashboardActiveBooking(b) {
-  return isDashboardReportBooking(b) && !isCancelledBooking(b);
+  return isDashboardReportBooking(b) && bookingHoldsAdminSlot(b);
 }
 function bookingHoldsAdminSlot(b) {
-  if (!b || isCancelledBooking(b)) return false;
-  if (String(b.status || '').toLowerCase() !== 'verifying') return true;
+  if (!b) return false;
+  const status = adminBookingStatus(b);
+  const paymentStatus = adminPaymentStatus(b);
+  if (status === 'cancelled') return false;
+  if (ADMIN_NON_HOLDING_PAYMENT_STATUSES.has(paymentStatus)) return false;
+  if (paymentStatus === 'unpaid' && adminHasGatewaySession(b) && status !== 'confirmed' && status !== 'completed') return false;
+  if (!ADMIN_HOLDING_BOOKING_STATUSES.has(status)) return false;
+  if (status !== 'verifying') return true;
   const created = b.createdAt || b.created_at;
   if (!created) return true;
   const createdMs = new Date(created).getTime();
@@ -3516,6 +3540,7 @@ function bookingPayStateSelect(b){
     <option value="downpayment_paid" ${b.paymentStatus==='downpayment_paid'?'selected':''}>Downpayment Paid</option>
     <option value="paid" ${b.paymentStatus==='paid'?'selected':''}>Fully Paid</option>
     <option value="for_verification" ${b.paymentStatus==='for_verification'?'selected':''}>For Verification</option>
+    <option value="failed" ${b.paymentStatus==='failed'?'selected':''}>Failed</option>
     <option value="rejected" ${b.paymentStatus==='rejected'?'selected':''}>Rejected</option>
   </select>`;
 }
@@ -3549,6 +3574,7 @@ function bookingPayStateSelect(b){
     <option value="downpayment_paid" ${b.paymentStatus==='downpayment_paid'?'selected':''}>Downpayment Paid</option>
     <option value="paid" ${b.paymentStatus==='paid'?'selected':''}>Fully Paid</option>
     <option value="for_verification" ${b.paymentStatus==='for_verification'?'selected':''}>For Verification</option>
+    <option value="failed" ${b.paymentStatus==='failed'?'selected':''}>Failed</option>
     <option value="rejected" ${b.paymentStatus==='rejected'?'selected':''}>Rejected</option>
   </select>`;
 }
@@ -3646,6 +3672,7 @@ function startAdminRealtime(){
       // Don't yank content out from under an open modal dialog.
       if(document.querySelector('.overlay.show')) return;
       try{
+        if (DB.clearCache) DB.clearCache();
         if(_curSection && SECTION_LOADERS[_curSection]) await SECTION_LOADERS[_curSection]();
       }catch(_){}
     },300);
@@ -4049,6 +4076,7 @@ async function renderBookings(){
           <option value="downpayment_paid" ${b.paymentStatus==='downpayment_paid'?'selected':''}>Downpayment Paid</option>
           <option value="paid" ${b.paymentStatus==='paid'?'selected':''}>Fully Paid</option>
           <option value="for_verification" ${b.paymentStatus==='for_verification'?'selected':''}>For Verification</option>
+          <option value="failed" ${b.paymentStatus==='failed'?'selected':''}>Failed</option>
           <option value="rejected" ${b.paymentStatus==='rejected'?'selected':''}>Rejected</option>
         </select>
         ${receiptBadge(b)}

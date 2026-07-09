@@ -334,13 +334,38 @@ function rowToBooking(r) {
 }
 
 const PB_RESERVATION_HOLD_MINUTES = 15;
+const PB_NON_HOLDING_PAYMENT_STATUSES = new Set(['failed', 'rejected', 'cancelled', 'canceled', 'expired']);
+const PB_HOLDING_BOOKING_STATUSES = new Set(['pending', 'verifying', 'confirmed', 'completed']);
+
+function _pbBookingStatus(b) {
+  return String(b?.status || '').toLowerCase();
+}
+
+function _pbPaymentStatus(b) {
+  return String(b?.payment_status ?? b?.paymentStatus ?? '').toLowerCase();
+}
+
+function _pbHasGatewaySession(b) {
+  return !!(
+    b?.payment_provider ||
+    b?.paymentProvider ||
+    b?.payment_session_id ||
+    b?.paymentSessionId ||
+    b?.payment_checkout_url ||
+    b?.paymentCheckoutUrl
+  );
+}
 
 function bookingHoldsSlotForConflict(b) {
-  if (!b || b.status === 'cancelled') return false;
-  const status = String(b.status || '').toLowerCase();
-  const payStatus = String(b.paymentStatus || b.payment_status || '').toLowerCase();
+  if (!b) return false;
+  const status = _pbBookingStatus(b);
+  const payStatus = _pbPaymentStatus(b);
+  if (status === 'cancelled') return false;
+  if (PB_NON_HOLDING_PAYMENT_STATUSES.has(payStatus)) return false;
+  if (!PB_HOLDING_BOOKING_STATUSES.has(status)) return false;
+
   const provider = String(b.paymentProvider || b.payment_provider || '').toLowerCase();
-  const hasProviderSession = !!(b.paymentSessionId || b.payment_session_id);
+  const hasProviderSession = _pbHasGatewaySession(b);
   const isTemporaryHold =
     status === 'verifying' ||
     ((provider.includes('paymongo') || hasProviderSession) && status === 'pending' && ['pending', 'unpaid', 'for_verification', ''].includes(payStatus));
@@ -601,7 +626,7 @@ window.DB = {
     // Check for slot conflicts before inserting
     const { data: existing } = await _sb
       .from('bookings')
-      .select('ref, status, payment_status, payment_provider, payment_session_id, slots, created_at')
+      .select('ref, status, payment_status, payment_provider, payment_session_id, payment_checkout_url, slots, created_at')
       .eq('court_id', booking.courtId)
       .eq('date', booking.date)
       .neq('status', 'cancelled');

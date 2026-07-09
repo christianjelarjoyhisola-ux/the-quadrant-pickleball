@@ -39,7 +39,7 @@ CREATE TABLE IF NOT EXISTS public.bookings (
   received_account     text,
   payment_flow         text,
   payment_status       text NOT NULL DEFAULT 'unpaid'
-    CHECK (payment_status IN ('unpaid','pending','for_verification','downpayment_paid','paid','failed')),
+    CHECK (payment_status IN ('unpaid','pending','for_verification','downpayment_paid','paid','failed','rejected')),
   payment_provider     text,
   payment_session_id   text,
   payment_checkout_url text,
@@ -47,7 +47,7 @@ CREATE TABLE IF NOT EXISTS public.bookings (
   gcash_ref            text,
   downpayment          numeric,
   status               text NOT NULL DEFAULT 'pending'
-    CHECK (status IN ('pending','confirmed','cancelled','completed')),
+    CHECK (status IN ('pending','verifying','confirmed','cancelled','completed')),
   created_at           timestamptz NOT NULL DEFAULT now()
 );
 
@@ -187,15 +187,37 @@ CREATE TRIGGER trg_op_game_sessions_touch_updated_at
 
 CREATE OR REPLACE FUNCTION public.prevent_double_booking()
 RETURNS TRIGGER LANGUAGE plpgsql AS $$
+DECLARE
+  new_status text := lower(coalesce(NEW.status, ''));
+  new_payment_status text := lower(coalesce(NEW.payment_status, ''));
 BEGIN
-  IF NEW.status = 'cancelled' THEN RETURN NEW; END IF;
+  IF new_status = 'cancelled' THEN RETURN NEW; END IF;
+  IF new_payment_status IN ('failed', 'rejected', 'cancelled', 'canceled', 'expired') THEN RETURN NEW; END IF;
+  IF new_payment_status = 'unpaid'
+    AND (NEW.payment_provider IS NOT NULL OR NEW.payment_session_id IS NOT NULL OR NEW.payment_checkout_url IS NOT NULL)
+    AND new_status NOT IN ('confirmed', 'completed') THEN
+    RETURN NEW;
+  END IF;
+  IF new_status NOT IN ('pending', 'verifying', 'confirmed', 'completed') THEN RETURN NEW; END IF;
+
   IF EXISTS (
     SELECT 1 FROM public.bookings b
     WHERE b.court_id = NEW.court_id
       AND b.date     = NEW.date
-      AND b.status  != 'cancelled'
       AND b.ref     != NEW.ref
       AND b.slots   && NEW.slots
+      AND lower(coalesce(b.status, '')) IN ('pending', 'verifying', 'confirmed', 'completed')
+      AND lower(coalesce(b.payment_status, '')) NOT IN ('failed', 'rejected', 'cancelled', 'canceled', 'expired')
+      AND NOT (
+        lower(coalesce(b.payment_status, '')) = 'unpaid'
+        AND (b.payment_provider IS NOT NULL OR b.payment_session_id IS NOT NULL OR b.payment_checkout_url IS NOT NULL)
+        AND lower(coalesce(b.status, '')) NOT IN ('confirmed', 'completed')
+      )
+      AND (
+        lower(coalesce(b.status, '')) != 'verifying'
+        OR b.created_at IS NULL
+        OR b.created_at > (now() - interval '15 minutes')
+      )
   ) THEN
     RAISE EXCEPTION 'One or more time slots are already booked for this court and date.';
   END IF;

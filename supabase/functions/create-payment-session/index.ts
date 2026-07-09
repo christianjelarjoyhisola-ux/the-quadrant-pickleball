@@ -82,6 +82,17 @@ function closeMoney(a: number, b: number) {
   return Math.abs(roundMoney(a) - roundMoney(b)) <= 0.01;
 }
 
+function checkoutReturnUrl(rawUrl: string, params: Record<string, string>) {
+  try {
+    const url = new URL(rawUrl);
+    for (const [key, value] of Object.entries(params)) url.searchParams.set(key, value);
+    return url.toString();
+  } catch {
+    const query = new URLSearchParams(params).toString();
+    return rawUrl.includes("?") ? `${rawUrl}&${query}` : `${rawUrl}?${query}`;
+  }
+}
+
 function settingMap(rows: Array<{ key: string; value: string }> | null) {
   const out: Record<string, string> = {};
   (rows || []).forEach((row) => { out[row.key] = row.value; });

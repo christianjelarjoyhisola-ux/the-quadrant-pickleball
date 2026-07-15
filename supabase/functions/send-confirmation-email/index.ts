@@ -116,7 +116,7 @@ function buildHtml(p: Payload): string {
         <p style="margin:0 0 20px;font-size:1rem;color:#f7fafc;">Hi <strong>${fullName}</strong>,</p>
         <p style="margin:0 0 24px;font-size:.95rem;color:#d7dee8;line-height:1.6;">
           Great news! THE QUADRANT booking has been <strong style="color:#f49a4a;">confirmed</strong>.
-          ${isFullPay ? "Your full payment has been received and your slot is locked in." : "Your downpayment has been received and your slot is locked in."} See you on the court!
+          ${isFullPay ? "Your full payment has been received and your slot is locked in." : "Your required payment has been received and your slot is locked in. The remaining balance is court fee only."} See you on the court!
         </p>
 
         <table width="100%" cellpadding="0" cellspacing="0" style="background:#1d241e;background-image:linear-gradient(#1d241e,#1d241e);border:1.5px solid #8b4b20;border-radius:10px;margin-bottom:24px;">
@@ -166,7 +166,7 @@ function buildHtml(p: Payload): string {
                 <div style="font-size:1.05rem;font-weight:800;color:#f7fafc;">${fmtPHP(p.total)}</div>
               </td>
               <td width="50%" style="vertical-align:top;">
-                <div style="font-size:.7rem;text-transform:uppercase;letter-spacing:1px;color:#aab6c5;margin-bottom:3px;">${isFullPay ? "Full Payment" : "Downpayment Paid"}</div>
+                <div style="font-size:.7rem;text-transform:uppercase;letter-spacing:1px;color:#aab6c5;margin-bottom:3px;">${isFullPay ? "Full Payment" : "Required Payment Paid"}</div>
                 <div style="font-size:1.05rem;font-weight:800;color:#f49a4a;">&#10003; ${fmtPHP(p.downpayment)}</div>
               </td>
             </tr></table>
@@ -315,25 +315,39 @@ Deno.serve(async (req) => {
       `${isOpenPlay ? "open-play" : "booking"}-confirmation-${body.bookingRef}`
     ).slice(0, 256);
 
-    const res = await fetch("https://api.resend.com/emails", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${resendKey}`,
-        "Content-Type": "application/json",
-        "Idempotency-Key": idempotencyKey,
-      },
-      body: JSON.stringify({
-        from: fromAddress,
-        to: [body.email],
-        subject,
-        html: isOpenPlay ? buildOpenPlayHtml(body) : buildHtml(body),
-      }),
-    });
+    const emailRequest = {
+      from: fromAddress,
+      to: [body.email],
+      subject,
+      html: isOpenPlay ? buildOpenPlayHtml(body) : buildHtml(body),
+    };
+    const sendWithKey = async (key: string) => {
+      const response = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${resendKey}`,
+          "Content-Type": "application/json",
+          "Idempotency-Key": key,
+        },
+        body: JSON.stringify(emailRequest),
+      });
+      return { response, json: await response.json().catch(() => ({})) };
+    };
 
-    const json = await res.json().catch(() => ({}));
+    let { response: res, json } = await sendWithKey(idempotencyKey);
+    let retried = false;
+    if (res.status === 409 && json?.name === "invalid_idempotent_request") {
+      // The booking was rescheduled within Resend's 24-hour idempotency window.
+      // The same reference now has legitimate new content, so retry this one
+      // conflict with a fresh key while leaving unchanged duplicate requests
+      // protected by their original stable key.
+      const retryKey = `booking-content-update-${body.bookingRef}-${crypto.randomUUID()}`.slice(0, 256);
+      ({ response: res, json } = await sendWithKey(retryKey));
+      retried = true;
+    }
     if (!res.ok) throw new Error(`Resend error ${res.status}: ${JSON.stringify(json)}`);
 
-    return new Response(JSON.stringify({ ok: true, id: json.id }), {
+    return new Response(JSON.stringify({ ok: true, id: json.id, retried }), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });

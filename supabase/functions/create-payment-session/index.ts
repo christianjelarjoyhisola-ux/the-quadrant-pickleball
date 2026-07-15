@@ -4,6 +4,7 @@ type CreatePayload = {
   bookingRef?: string;
   openPlayRegistrationId?: string | number;
   amountPhp?: number;
+  paymentOption?: "full" | "downpayment";
   customer?: {
     name?: string;
     email?: string;
@@ -24,6 +25,7 @@ type BookingRow = {
   downpayment: number | null;
   status: string | null;
   payment_status: string | null;
+  created_at: string | null;
 };
 
 type CourtRow = {
@@ -122,7 +124,13 @@ function rateForHour(hour: number, tiers: Array<{ from: number; to: number; rate
     : fallbackRate;
 }
 
-function expectedBookingAmounts(booking: BookingRow, court: CourtRow, settings: Record<string, string>) {
+function expectedBookingAmounts(
+  booking: BookingRow,
+  court: CourtRow,
+  settings: Record<string, string>,
+  paymentOption = "",
+  includeFlatFee = true,
+) {
   const slots = (booking.slots || []).map(Number).filter(Number.isFinite);
   if (slots.length === 0) throw new Error("Booking has no billable slots");
 
@@ -135,17 +143,20 @@ function expectedBookingAmounts(booking: BookingRow, court: CourtRow, settings: 
 
   const feeRate = toNumber(settings.maintenance_fee ?? settings.service_fee_rate ?? settings.booking_fee);
   const feeType = settings.fee_type === "flat" ? "flat" : "per_hour";
-  const serviceFee = feeType === "flat" ? feeRate : feeRate * slots.length;
+  const serviceFee = feeType === "flat" ? (includeFlatFee ? feeRate : 0) : feeRate * slots.length;
   const total = roundMoney(courtTotal + serviceFee);
-  const half = roundMoney(total / 2);
-  const storedDownpayment = toNumber(booking.downpayment, -1);
+  const requiredPayment = roundMoney((courtTotal / 2) + serviceFee);
+  const storedDownpayment = booking.downpayment == null ? -1 : toNumber(booking.downpayment, -1);
   const mode = settings.payment_acceptance_mode || "both";
 
-  let due = half;
+  let due = requiredPayment;
   if (mode === "full_payment_only") due = total;
-  else if (mode === "downpayment_only") due = half;
+  else if (mode === "downpayment_only") due = requiredPayment;
+  else if (paymentOption === "full") due = total;
+  else if (paymentOption === "downpayment") due = requiredPayment;
   else if (closeMoney(storedDownpayment, total)) due = total;
-  else if (closeMoney(storedDownpayment, half)) due = half;
+  else if (closeMoney(storedDownpayment, requiredPayment)) due = requiredPayment;
+  else if (storedDownpayment < 0) due = requiredPayment;
   else throw new Error("Booking amount does not match current pricing");
 
   return { total, due };
@@ -158,7 +169,7 @@ async function loadBookingGroup(
   if (!booking.booking_group_ref) return [booking];
   const { data, error } = await db
     .from("bookings")
-    .select("ref,booking_group_ref,full_name,email,contact_number,court_id,slots,total,downpayment,status,payment_status")
+    .select("ref,booking_group_ref,full_name,email,contact_number,court_id,slots,total,downpayment,status,payment_status,created_at")
     .eq("booking_group_ref", booking.booking_group_ref)
     .neq("status", "cancelled");
   if (error) throw error;
@@ -169,21 +180,38 @@ async function expectedBookingGroupAmounts(
   db: any,
   bookings: BookingRow[],
   settings: Record<string, string>,
+  paymentOption = "",
 ) {
   let total = 0;
   let due = 0;
-  for (const row of bookings) {
+  const items: Array<{ ref: string; total: number; due: number }> = [];
+  for (let index = 0; index < bookings.length; index += 1) {
+    const row = bookings[index];
     const { data: court, error: courtErr } = await db
       .from("courts")
       .select("rate,rate_schedule")
       .eq("id", row.court_id)
       .single();
     if (courtErr || !court) throw courtErr || new Error("Court not found");
-    const amounts = expectedBookingAmounts(row, court as CourtRow, settings);
+    // A flat booking fee belongs to the transaction, so only one child row gets it.
+    const amounts = expectedBookingAmounts(row, court as CourtRow, settings, paymentOption, index === 0);
     total += amounts.total;
     due += amounts.due;
+    items.push({ ref: row.ref, total: amounts.total, due: amounts.due });
   }
-  return { total: roundMoney(total), due: roundMoney(due) };
+  return { total: roundMoney(total), due: roundMoney(due), items };
+}
+
+function bookingCustomerError(customer: { name: string; email: string; phone: string }) {
+  const name = String(customer.name || "").trim();
+  const email = String(customer.email || "").trim();
+  const phone = String(customer.phone || "").replace(/[\s-]/g, "");
+  if (name.length < 3 || name.toLowerCase().startsWith("reserving")) return "A valid customer name is required";
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.toLowerCase() === "reserve@hold.internal") {
+    return "A valid customer email is required";
+  }
+  if (!/^(09|\+639)\d{9}$/.test(phone)) return "A valid Philippine contact number is required";
+  return "";
 }
 
 function findStringByKey(obj: unknown, keys: string[]): string | null {
@@ -261,7 +289,7 @@ async function createPayMongoQrphSession(input: {
         currency: "PHP",
         payment_method_allowed: ["qrph"],
         capture_type: "automatic",
-        description: `Downpayment for ${input.bookingRef}`,
+        description: `Required payment for ${input.bookingRef}`,
         statement_descriptor: "THE QUADRANT",
         metadata: input.metadata,
       },
@@ -346,11 +374,11 @@ async function createPayMongoCheckoutSession(input: {
             amount: amountCents,
             name: `Booking ${input.bookingRef}`,
             quantity: 1,
-            description: `Downpayment for booking ${input.bookingRef}`,
+            description: `Required payment for booking ${input.bookingRef}`,
           },
         ],
         reference_number: input.bookingRef,
-        description: `Downpayment for ${input.bookingRef}`,
+        description: `Required payment for ${input.bookingRef}`,
         metadata: input.metadata,
         billing: {
           name: input.customer.name,
@@ -399,6 +427,13 @@ Deno.serve(async (req) => {
 
     const body = (await req.json()) as CreatePayload;
     const openPlayRegistrationId = String(body.openPlayRegistrationId || "").trim();
+    const paymentOption = String(body.paymentOption || "").trim().toLowerCase();
+    if (paymentOption && paymentOption !== "full" && paymentOption !== "downpayment") {
+      return new Response(JSON.stringify({ error: "paymentOption must be full or downpayment" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
     let bookingRef = String(body.bookingRef || "").trim();
     const isOpenPlay = !!openPlayRegistrationId && !bookingRef;
     if (!bookingRef && !isOpenPlay) {
@@ -455,7 +490,7 @@ Deno.serve(async (req) => {
     } else {
       const { data: bookingData, error: bookingErr } = await db
         .from("bookings")
-        .select("ref,booking_group_ref,full_name,email,contact_number,court_id,slots,total,downpayment,status,payment_status")
+        .select("ref,booking_group_ref,full_name,email,contact_number,court_id,slots,total,downpayment,status,payment_status,created_at")
         .eq("ref", bookingRef)
         .single();
       if (bookingErr || !bookingData) {
@@ -472,13 +507,64 @@ Deno.serve(async (req) => {
         });
       }
       const bookingGroup = await loadBookingGroup(db, booking);
-      const amounts = await expectedBookingGroupAmounts(db, bookingGroup, settings);
+      const amounts = await expectedBookingGroupAmounts(db, bookingGroup, settings, paymentOption);
       amountPhp = amounts.due;
       customer = {
         name: body.customer?.name || booking.full_name || "Customer",
         email: body.customer?.email || booking.email || "",
         phone: body.customer?.phone || booking.contact_number || "",
       };
+      customer = {
+        name: String(customer.name || "").trim(),
+        email: String(customer.email || "").trim(),
+        phone: String(customer.phone || "").replace(/[\s-]/g, ""),
+      };
+      const customerError = bookingCustomerError(customer);
+      if (customerError) {
+        return new Response(JSON.stringify({ error: customerError }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      const placeholderIdentity = booking.email === "reserve@hold.internal" ||
+        String(booking.full_name || "").toLowerCase().startsWith("reserving");
+      const exactIdentity = String(booking.full_name || "").trim() === customer.name &&
+        String(booking.email || "").trim().toLowerCase() === customer.email.toLowerCase() &&
+        String(booking.contact_number || "").replace(/[\s-]/g, "") === customer.phone;
+      const createdMs = new Date(booking.created_at || "").getTime();
+      const freshHold = Number.isFinite(createdMs) && Date.now() - createdMs < 15 * 60 * 1000;
+      const payableState = booking.status === "verifying" || booking.status === "pending";
+      if (!freshHold || !payableState || (!placeholderIdentity && !exactIdentity)) {
+        return new Response(JSON.stringify({ error: "This booking hold is no longer payable" }), {
+          status: 409,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // A court booking starts as a short-lived anonymous placeholder. Save the
+      // submitted identity with the service role before contacting PayMongo so
+      // mobile in-app browsers cannot leave a paid "Reserving..." row behind if
+      // their browser-side UPDATE is dropped while switching to a payment app.
+      for (const item of amounts.items) {
+        const { data: savedBooking, error: saveErr } = await db
+          .from("bookings")
+          .update({
+            full_name: customer.name,
+            email: customer.email,
+            contact_number: customer.phone,
+            total: item.total,
+            downpayment: item.due,
+            payment_method: "gcash",
+            payment_flow: "gcash",
+            received_account: "gcash",
+          })
+          .eq("ref", item.ref)
+          .neq("status", "cancelled")
+          .select("ref")
+          .maybeSingle();
+        if (saveErr) throw saveErr;
+        if (!savedBooking) throw new Error(`Booking ${item.ref} is no longer available`);
+      }
       bookingGroupRef = booking.booking_group_ref || "";
       metadata = {
         ...metadata,
@@ -486,6 +572,44 @@ Deno.serve(async (req) => {
         booking_ref: bookingRef,
         ...(booking.booking_group_ref ? { booking_group_ref: booking.booking_group_ref } : {}),
       };
+    }
+
+    // Reuse a recent pending session when a mobile browser retries after losing
+    // the first response. This prevents two payable QR codes for one hold.
+    const retryCutoff = new Date(Date.now() - 15 * 60 * 1000).toISOString();
+    const { data: existingSession, error: existingSessionErr } = await db
+      .from("payment_sessions")
+      .select("id,provider,provider_reference,amount_php,status,checkout_url,raw_request,created_at")
+      .eq("booking_ref", bookingRef)
+      .eq("status", "pending")
+      .gte("created_at", retryCutoff)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (existingSessionErr) throw existingSessionErr;
+    if (existingSession && closeMoney(toNumber(existingSession.amount_php), amountPhp)) {
+      const storedRaw = (existingSession.raw_request || {}) as Record<string, unknown>;
+      const storedPayMongo = storedRaw.paymongo || {};
+      const storedQrImage = findQrImageUrl(storedPayMongo) || "";
+      const storedCheckoutUrl = String(existingSession.checkout_url || "");
+      if (storedQrImage || storedCheckoutUrl) {
+        return new Response(JSON.stringify({
+          ok: true,
+          reused: true,
+          provider: existingSession.provider,
+          sessionId: existingSession.id,
+          providerSessionId: existingSession.provider_reference,
+          checkoutUrl: storedCheckoutUrl,
+          qrImageUrl: storedQrImage,
+          expiresAt: findExpiresAt(storedPayMongo),
+          amountPhp,
+          bookingRef,
+          openPlayRegistrationId: isOpenPlay ? openPlayRegistrationId : null,
+        }), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
     }
 
     let checkoutUrl = "";
@@ -570,6 +694,7 @@ Deno.serve(async (req) => {
       if (opErr) throw opErr;
     } else if (booking) {
       const bookingUpdate = {
+        status: "pending",
         payment_status: "pending",
         payment_provider: providerName,
         payment_session_id: sessionId,

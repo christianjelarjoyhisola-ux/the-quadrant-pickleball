@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { sendPaidBookingConfirmation } from "../_shared/booking-confirmation.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -14,12 +15,18 @@ type PaymentSessionRow = {
   booking_ref: string;
   provider_reference: string | null;
   status: string | null;
+  amount_php: number | string | null;
+  raw_request: Record<string, unknown> | null;
 };
 
 type BookingRow = {
   ref: string;
   booking_group_ref: string | null;
   payment_status: string | null;
+  full_name: string | null;
+  email: string | null;
+  contact_number: string | null;
+  total: number | string | null;
 };
 
 function openPlayIdFromRef(ref: string) {
@@ -50,6 +57,19 @@ function normalizeStatus(input?: string) {
   if (["paid", "succeeded", "success", "completed"].includes(v)) return "paid";
   if (["failed", "canceled", "cancelled", "expired"].includes(v)) return "failed";
   return "pending";
+}
+
+function customerFromPaymentSession(session: PaymentSessionRow) {
+  const raw = session.raw_request || {};
+  const request = (raw.request || {}) as Record<string, unknown>;
+  const source = (request.customer || {}) as Record<string, unknown>;
+  const name = String(source.name || "").trim();
+  const email = String(source.email || "").trim();
+  const phone = String(source.phone || "").replace(/[\s-]/g, "");
+  const valid = name.length >= 3 && !name.toLowerCase().startsWith("reserving") &&
+    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && email.toLowerCase() !== "reserve@hold.internal" &&
+    /^(09|\+639)\d{9}$/.test(phone);
+  return valid ? { name, email, phone } : null;
 }
 
 function isoFromPayMongoTimestamp(value: unknown) {
@@ -126,10 +146,44 @@ async function fetchPayMongoPaymentState(secretKey: string, providerReference: s
   return fetchPayMongoCheckout(secretKey, providerReference);
 }
 
-async function updateBookingPayment(db: any, booking: BookingRow, normalized: string, paidAt: string | null) {
+async function updateBookingPayment(
+  db: any,
+  booking: BookingRow,
+  session: PaymentSessionRow,
+  normalized: string,
+  paidAt: string | null,
+) {
+  let bookingPaymentStatus = normalized;
+  if (normalized === "paid") {
+    let bookingTotal = Number(booking.total || 0);
+    if (booking.booking_group_ref) {
+      const { data: groupRows, error: groupErr } = await db
+        .from("bookings")
+        .select("total")
+        .eq("booking_group_ref", booking.booking_group_ref)
+        .neq("status", "cancelled");
+      if (groupErr) throw groupErr;
+      bookingTotal = (groupRows || []).reduce((sum: number, row: { total?: number | string | null }) => sum + Number(row.total || 0), 0);
+    }
+    bookingPaymentStatus = Number(session.amount_php || 0) + 0.01 >= bookingTotal ? "paid" : "downpayment_paid";
+  }
   const bookingUpdate: Record<string, unknown> = {
-    payment_status: normalized,
+    payment_status: bookingPaymentStatus,
   };
+  const customer = customerFromPaymentSession(session);
+  const isPlaceholder = booking.email === "reserve@hold.internal" ||
+    String(booking.full_name || "").toLowerCase().startsWith("reserving");
+  if (customer && isPlaceholder) {
+    bookingUpdate.full_name = customer.name;
+    bookingUpdate.email = customer.email;
+    bookingUpdate.contact_number = customer.phone;
+    bookingUpdate.payment_method = "gcash";
+    bookingUpdate.payment_flow = "gcash";
+    bookingUpdate.received_account = "gcash";
+    if (!booking.booking_group_ref && Number(session.amount_php) > 0) {
+      bookingUpdate.downpayment = Number(session.amount_php);
+    }
+  }
   if (normalized === "paid") {
     bookingUpdate.status = "confirmed";
     if (paidAt) bookingUpdate.paid_at = paidAt;
@@ -201,7 +255,7 @@ Deno.serve(async (req) => {
     } else {
       const { data: bookingData, error: bookingErr } = await db
         .from("bookings")
-        .select("ref,booking_group_ref,payment_status")
+        .select("ref,booking_group_ref,payment_status,full_name,email,contact_number,total")
         .eq("ref", bookingRef)
         .maybeSingle();
       if (bookingErr) throw bookingErr;
@@ -216,7 +270,7 @@ Deno.serve(async (req) => {
 
     const { data: session, error: sessionErr } = await db
       .from("payment_sessions")
-      .select("id,booking_ref,provider_reference,status")
+      .select("id,booking_ref,provider_reference,status,amount_php,raw_request")
       .eq("booking_ref", bookingRef)
       .order("created_at", { ascending: false })
       .limit(1)
@@ -248,7 +302,14 @@ Deno.serve(async (req) => {
 
     if (normalized === "paid" || normalized === "failed") {
       if (openPlayRegistrationId) await updateOpenPlayPayment(db, openPlayRegistrationId, normalized);
-      else await updateBookingPayment(db, booking as BookingRow, normalized, paidAt);
+      else {
+        await updateBookingPayment(db, booking as BookingRow, session as PaymentSessionRow, normalized, paidAt);
+        if (normalized === "paid") {
+          await sendPaidBookingConfirmation(db, supabaseUrl, serviceRoleKey, bookingRef).catch((emailErr) => {
+            console.error("Paid booking confirmation email failed", emailErr);
+          });
+        }
+      }
     }
 
     return new Response(JSON.stringify({

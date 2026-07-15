@@ -278,7 +278,10 @@ async function run() {
     { key: 'venue_name',    value: 'The Quadrant' },
     { key: 'open_time',     value: '6' },
     { key: 'close_time',    value: '22' },
-    { key: 'booking_fee',   value: '5' },
+    { key: 'booking_fee',   value: '15' },
+    { key: 'maintenance_fee', value: '15' },
+    { key: 'fee_type', value: 'flat' },
+    { key: 'processor_fee_legacy_cutoff_at', value: '2026-07-13T15:25:18+08:00' },
     { key: 'open_play_fee', value: '100' },
   ], { onConflict: 'key' });
   console.log(settErr ? `  ✗ seed settings: ${settErr.message}` : '  ✓ seed settings');

@@ -51,6 +51,7 @@ Add-SecretArg "PAYMENT_CANCEL_URL" $envMap["PAYMENT_CANCEL_URL"]
 Add-SecretArg "PAYMENT_WEBHOOK_SECRET" $envMap["PAYMENT_WEBHOOK_SECRET"]
 Add-SecretArg "RESEND_API_KEY" $envMap["RESEND_API_KEY"]
 Add-SecretArg "EMAIL_FROM" $envMap["EMAIL_FROM"]
+Add-SecretArg "SMS_API_PH_API_KEY" $envMap["SMS_API_PH_API_KEY"]
 Add-SecretArg "APP_ADMIN_URL" $envMap["APP_ADMIN_URL"]
 Add-SecretArg "APP_LOGO_URL" $envMap["APP_LOGO_URL"]
 Add-SecretArg "APP_LOCATION" $envMap["APP_LOCATION"]
@@ -69,6 +70,7 @@ npx supabase functions deploy sync-payment-session --no-verify-jwt
 npx supabase functions deploy verify-gcash-receipt --no-verify-jwt
 npx supabase functions deploy manage-account --no-verify-jwt
 npx supabase functions deploy send-confirmation-email --no-verify-jwt
+npx supabase functions deploy send-confirmation-sms --no-verify-jwt
 npx supabase functions deploy send-reschedule-email --no-verify-jwt
 npx supabase functions deploy send-telegram-notification --no-verify-jwt
 npx supabase functions deploy integration-status --no-verify-jwt

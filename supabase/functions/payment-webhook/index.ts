@@ -1,4 +1,5 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { sendPaidBookingConfirmation } from "../_shared/booking-confirmation.ts";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -51,11 +52,31 @@ type OpenPlayRegistrationEmailRow = {
   amount?: number | string | null;
 };
 
+type PaymentSessionIdentityRow = {
+  id: string;
+  booking_ref: string;
+  amount_php?: number | string | null;
+  raw_request?: Record<string, unknown> | null;
+};
+
 function normalizeStatus(input?: string) {
   const v = (input || "").toLowerCase();
   if (["paid", "succeeded", "success", "completed"].includes(v)) return "paid";
   if (["failed", "canceled", "cancelled", "expired"].includes(v)) return "failed";
   return "pending";
+}
+
+function customerFromPaymentSession(session: PaymentSessionIdentityRow | null) {
+  const raw = session?.raw_request || {};
+  const request = (raw.request || {}) as Record<string, unknown>;
+  const source = (request.customer || {}) as Record<string, unknown>;
+  const name = String(source.name || "").trim();
+  const email = String(source.email || "").trim();
+  const phone = String(source.phone || "").replace(/[\s-]/g, "");
+  const valid = name.length >= 3 && !name.toLowerCase().startsWith("reserving") &&
+    /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) && email.toLowerCase() !== "reserve@hold.internal" &&
+    /^(09|\+639)\d{9}$/.test(phone);
+  return valid ? { name, email, phone } : null;
 }
 
 function isoFromPayMongoTimestamp(value: unknown) {
@@ -73,7 +94,7 @@ function isoFromPayMongoTimestamp(value: unknown) {
 
 async function verifySignature(req: Request, bodyText: string) {
   const secret = Deno.env.get("PAYMENT_WEBHOOK_SECRET");
-  if (!secret) return true;
+  if (!secret) return false;
 
   const paymongoSig = req.headers.get("paymongo-signature") || req.headers.get("Paymongo-Signature") || "";
   if (paymongoSig) {
@@ -254,45 +275,66 @@ Deno.serve(async (req) => {
 
     let bookingRefToUpdate = bookingRef;
     let localSessionId: string | null = null;
+    let paymentSession: PaymentSessionIdentityRow | null = null;
 
     if (sessionId) {
       // 1) Try local session id
-      const { data: localRow } = await db.from("payment_sessions").select("id,booking_ref").eq("id", sessionId).single();
+      const { data: localRow } = await db.from("payment_sessions").select("id,booking_ref,amount_php,raw_request").eq("id", sessionId).single();
       if (localRow?.id) {
         localSessionId = localRow.id;
+        paymentSession = localRow as PaymentSessionIdentityRow;
         if (!bookingRefToUpdate) bookingRefToUpdate = localRow.booking_ref || null;
       }
       // 2) Try provider reference
       if (!localSessionId) {
-        const { data: providerRow } = await db.from("payment_sessions").select("id,booking_ref").eq("provider_reference", sessionId).single();
+        const { data: providerRow } = await db.from("payment_sessions").select("id,booking_ref,amount_php,raw_request").eq("provider_reference", sessionId).single();
         if (providerRow?.id) {
           localSessionId = providerRow.id;
+          paymentSession = providerRow as PaymentSessionIdentityRow;
           if (!bookingRefToUpdate) bookingRefToUpdate = providerRow.booking_ref || null;
         }
       }
     }
 
     if (!localSessionId && providerRef) {
-      const { data: providerRow2 } = await db.from("payment_sessions").select("id,booking_ref").eq("provider_reference", providerRef).single();
+      const { data: providerRow2 } = await db.from("payment_sessions").select("id,booking_ref,amount_php,raw_request").eq("provider_reference", providerRef).single();
       if (providerRow2?.id) {
         localSessionId = providerRow2.id;
+        paymentSession = providerRow2 as PaymentSessionIdentityRow;
         if (!bookingRefToUpdate) bookingRefToUpdate = providerRow2.booking_ref || null;
       }
     }
 
+    if (!paymentSession && bookingRefToUpdate) {
+      const { data: bookingSession } = await db
+        .from("payment_sessions")
+        .select("id,booking_ref,amount_php,raw_request")
+        .eq("booking_ref", bookingRefToUpdate)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (bookingSession?.id) {
+        paymentSession = bookingSession as PaymentSessionIdentityRow;
+        if (!localSessionId) localSessionId = bookingSession.id;
+      }
+    }
+
     if (localSessionId) {
-      await db.from("payment_sessions").update(paymentUpdate).eq("id", localSessionId);
+      const { error } = await db.from("payment_sessions").update(paymentUpdate).eq("id", localSessionId);
+      if (error) throw error;
     } else if (bookingRefToUpdate) {
-      await db.from("payment_sessions").update(paymentUpdate).eq("booking_ref", bookingRefToUpdate);
+      const { error } = await db.from("payment_sessions").update(paymentUpdate).eq("booking_ref", bookingRefToUpdate);
+      if (error) throw error;
     }
 
     if (bookingRefToUpdate) {
       const openPlayRegistrationId = openPlayIdFromRef(bookingRefToUpdate);
       if (openPlayRegistrationId) {
-        await db
+        const { error: opUpdateErr } = await db
           .from("open_play_registrations")
           .update({ payment_status: normalized === "paid" ? "paid" : normalized === "failed" ? "rejected" : "pending" })
           .eq("id", openPlayRegistrationId);
+        if (opUpdateErr) throw opUpdateErr;
         if (normalized === "paid") {
           await sendOpenPlayConfirmationEmail(
             supabaseUrl,
@@ -313,15 +355,55 @@ Deno.serve(async (req) => {
           bookingUpdate.paid_at = paidAtIso;
         }
         if (normalized === "failed") bookingUpdate.status = "cancelled";
-        const { data: bookingRow } = await db
+        const { data: bookingRow, error: bookingLoadErr } = await db
           .from("bookings")
-          .select("ref,booking_group_ref")
+          .select("ref,booking_group_ref,full_name,email,total")
           .eq("ref", bookingRefToUpdate)
           .single();
+        if (bookingLoadErr) throw bookingLoadErr;
+        if (normalized === "paid") {
+          let bookingTotal = Number(bookingRow?.total || 0);
+          if (bookingRow?.booking_group_ref) {
+            const { data: groupRows, error: groupErr } = await db
+              .from("bookings")
+              .select("total")
+              .eq("booking_group_ref", bookingRow.booking_group_ref)
+              .neq("status", "cancelled");
+            if (groupErr) throw groupErr;
+            bookingTotal = (groupRows || []).reduce(
+              (sum: number, row: { total?: number | string | null }) => sum + Number(row.total || 0),
+              0,
+            );
+          }
+          bookingUpdate.payment_status = Number(paymentSession?.amount_php || 0) + 0.01 >= bookingTotal
+            ? "paid"
+            : "downpayment_paid";
+        }
+        const customer = customerFromPaymentSession(paymentSession);
+        const isPlaceholder = bookingRow?.email === "reserve@hold.internal" ||
+          String(bookingRow?.full_name || "").toLowerCase().startsWith("reserving");
+        if (customer && isPlaceholder) {
+          bookingUpdate.full_name = customer.name;
+          bookingUpdate.email = customer.email;
+          bookingUpdate.contact_number = customer.phone;
+          bookingUpdate.payment_method = "gcash";
+          bookingUpdate.payment_flow = "gcash";
+          bookingUpdate.received_account = "gcash";
+          if (!bookingRow?.booking_group_ref && Number(paymentSession?.amount_php) > 0) {
+            bookingUpdate.downpayment = Number(paymentSession?.amount_php);
+          }
+        }
         if (bookingRow?.booking_group_ref) {
-          await db.from("bookings").update(bookingUpdate).eq("booking_group_ref", bookingRow.booking_group_ref);
+          const { error } = await db.from("bookings").update(bookingUpdate).eq("booking_group_ref", bookingRow.booking_group_ref);
+          if (error) throw error;
         } else {
-          await db.from("bookings").update(bookingUpdate).eq("ref", bookingRefToUpdate);
+          const { error } = await db.from("bookings").update(bookingUpdate).eq("ref", bookingRefToUpdate);
+          if (error) throw error;
+        }
+        if (normalized === "paid") {
+          await sendPaidBookingConfirmation(db, supabaseUrl, serviceRoleKey, bookingRefToUpdate).catch((emailErr) => {
+            console.error("Paid booking confirmation email failed", emailErr);
+          });
         }
       }
     }

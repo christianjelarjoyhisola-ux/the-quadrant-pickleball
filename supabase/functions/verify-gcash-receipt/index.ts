@@ -13,10 +13,10 @@
 // Decision lanes:
 //   auto_approved : zero hard flags, zero soft flags, OCR confident
 //   manual_review : soft flag(s) or unreadable fields or low confidence
-//   rejected      : any hard flag (duplicate / wrong number / underpay / stale)
+//   rejected      : a confirmed payment-reference replay/duplicate
 //
-// Rejections never auto-cancel the booking (OCR is heuristic — avoid harming
-// honest customers). They flag the booking red and alert the admin.
+// OCR is heuristic. Unreadable or mismatched receipt details therefore remain
+// pending for owner review instead of cancelling a customer who may have paid.
 // ----------------------------------------------------------------------------
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
@@ -35,23 +35,14 @@ const PAYMENT_WINDOW_MINUTES = 10;
 const PAYMENT_EARLY_TOLERANCE_MINUTES = 2;
 
 const MAX_BYTES = 5 * 1024 * 1024;
-const PESO_TOLERANCE = 5; // allow ±₱5 rounding; underpay beyond this is a hard flag
+const PESO_TOLERANCE = 5; // allow ±₱5 rounding; larger underpayments require owner review
 
-// Hard flags force a rejection; soft flags force manual review.
+// Only deterministic payment-ledger duplicates force rejection. OCR-derived
+// problems are review flags because even high-quality OCR can misread receipts.
 const HARD_FLAGS = new Set([
-  "REF_FORMAT_INVALID",
-  "SUSPECTED_FAKE",     // OCR ran and image has zero receipt-like content
-  "IMAGE_UNREADABLE",   // OCR found NO text at all -> random/blank/non-receipt image
   "DUPLICATE_REF",
   "DUPLICATE_INVOICE",
   "DUPLICATE_INSTAPAY_REF",
-  "METHOD_MISMATCH",
-  "REF_MISMATCH",
-  "DATE_NOT_TODAY",
-  "TIME_EXPIRED",
-  "TIME_FUTURE",
-  "WRONG_GCASH_NUMBER",
-  "AMOUNT_MISMATCH",    // Only hard if significantly underpaid (>₱5)
 ]);
 
 type PaymentProvider = "gcash" | "bdopay" | "maya" | "gotyme" | "pnb";
@@ -487,13 +478,17 @@ function rateForHour(hour: number, tiers: Array<Record<string, unknown>>, fallba
     : fallbackRate;
 }
 
-function chooseExpectedDue(total: number, storedDownpayment: number, settings: Record<string, string>): number {
-  const half = roundMoney(total / 2);
+function chooseExpectedDue(
+  total: number,
+  storedDownpayment: number,
+  settings: Record<string, string>,
+  requiredPayment = roundMoney(total / 2),
+): number {
   const mode = settings.payment_acceptance_mode || "both";
   if (mode === "full_payment_only") return total;
-  if (mode === "downpayment_only") return half;
+  if (mode === "downpayment_only") return requiredPayment;
   if (closeMoney(storedDownpayment, total)) return total;
-  if (closeMoney(storedDownpayment, half)) return half;
+  if (closeMoney(storedDownpayment, requiredPayment)) return requiredPayment;
   throw new Error("Stored payment amount does not match current pricing");
 }
 
@@ -512,6 +507,7 @@ async function expectedBookingAmount(
   db: any,
   booking: Record<string, unknown>,
   settings: Record<string, string>,
+  includeFlatFee = true,
 ): Promise<number> {
   const courtId = String(booking.court_id || "");
   if (!courtId) return expectedOpenPlayAmount(booking, settings);
@@ -536,9 +532,10 @@ async function expectedBookingAmount(
   const courtTotal = slots.reduce((sum, hour) => sum + rateForHour(hour, tiers, courtRate), 0);
   const feeRate = toNumber(settings.maintenance_fee ?? settings.service_fee_rate ?? settings.booking_fee);
   const feeType = settings.fee_type === "flat" ? "flat" : "per_hour";
-  const serviceFee = feeType === "flat" ? feeRate : feeRate * slots.length;
+  const serviceFee = feeType === "flat" ? (includeFlatFee ? feeRate : 0) : feeRate * slots.length;
   const total = roundMoney(courtTotal + serviceFee);
-  return chooseExpectedDue(total, toNumber(booking.downpayment, -1), settings);
+  const requiredPayment = roundMoney((courtTotal / 2) + serviceFee);
+  return chooseExpectedDue(total, toNumber(booking.downpayment, -1), settings, requiredPayment);
 }
 
 async function loadBookingGroup(
@@ -582,9 +579,24 @@ async function expectedBookingGroupAmount(
   bookings: Array<Record<string, unknown>>,
   settings: Record<string, string>,
 ): Promise<number> {
-  let due = 0;
-  for (const row of uniqueBookingRows(bookings)) due += await expectedBookingAmount(db, row, settings);
-  return roundMoney(due);
+  const rows = uniqueBookingRows(bookings);
+  const candidateCount = settings.fee_type === "flat" ? rows.length : Math.min(rows.length, 1);
+  let lastError: unknown = null;
+
+  // Group rows have no guaranteed query order. Try each row as the one carrying
+  // the single flat transaction fee and accept the allocation matching storage.
+  for (let feeIndex = 0; feeIndex < candidateCount; feeIndex += 1) {
+    try {
+      let due = 0;
+      for (let index = 0; index < rows.length; index += 1) {
+        due += await expectedBookingAmount(db, rows[index], settings, index === feeIndex);
+      }
+      return roundMoney(due);
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError || new Error("Booking amount does not match current pricing");
 }
 
 function bookingGroupStoredTotal(bookings: Array<Record<string, unknown>>): number {
@@ -964,8 +976,9 @@ Deno.serve(async (req) => {
 
     // ── OCR ─────────────────────────────────────────────────────────────────
     const visionKey = Deno.env.get("GOOGLE_VISION_API_KEY") || "";
-    // OCR.space free key (no billing required). Defaults to the public demo key.
-    const ocrSpaceKey = Deno.env.get("OCRSPACE_API_KEY") || "helloworld";
+    // Use a configured fallback key only. The public demo key is heavily rate
+    // limited and must never make a legitimate receipt look invalid.
+    const ocrSpaceKey = Deno.env.get("OCRSPACE_API_KEY") || "";
     const typedRef = normalizeReferenceForProvider(String(booking.gcash_ref || ""), provider);
     let ocrText = "";
     let ocrConfidence = 0;
@@ -984,14 +997,13 @@ Deno.serve(async (req) => {
     } catch (e) {
       console.error("OCR failed (all providers):", errMsg(e));
     }
-    if (!visionKey && !ocrSpaceKey) {
-      // No OCR provider configured at all — cannot verify content, manual review.
+    if (ocrProvider === "none") {
+      // No provider was configured, or all configured providers failed.
       flags.push("OCR_UNAVAILABLE");
     } else if (!ocrText) {
-      // OCR ran (OCR.space reliably reads genuine receipts) but found NO text.
-      // That means a random photo, a blank image, or a non-receipt upload —
-      // auto-reject. A real customer with a poor photo can simply re-upload.
-      flags.push("IMAGE_UNREADABLE"); // HARD — random/blank/non-receipt image
+      // OCR ran but returned no text. Route to owner review; the image may still
+      // be a legitimate screenshot that the OCR provider could not read.
+      flags.push("IMAGE_UNREADABLE");
     }
 
     // ── field extraction ────────────────────────────────────────────────────
@@ -1093,7 +1105,7 @@ Deno.serve(async (req) => {
         else if (extractedAmount < expectedAmount - PESO_TOLERANCE) flags.push("AMOUNT_MISMATCH");
       }
 
-      // Authenticity heuristics — HARD: a non-receipt image should be rejected outright.
+      // Authenticity is heuristic and therefore routes to owner review.
       if (!looksLikeGcashReceipt(ocrText)) flags.push("SUSPECTED_FAKE");
     }
     if (editedBySoftware(bytes)) flags.push("EDITED_METADATA");
@@ -1214,7 +1226,7 @@ Deno.serve(async (req) => {
         statusUpdate.status = "pending";
       }
     } else if (result === "rejected") {
-      // Cancel the booking immediately — invalid/fake receipt → slot must be freed.
+      // Only deterministic duplicate/replayed transaction identifiers reach here.
       statusUpdate.status = "cancelled";
       statusUpdate.payment_status = "rejected";
     }

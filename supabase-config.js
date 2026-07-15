@@ -109,6 +109,28 @@ function _extractFnError(err, fallback = 'Edge Function request failed') {
   try { return JSON.stringify(err); } catch(_) { return fallback; }
 }
 
+const PB_EDGE_REQUEST_TIMEOUT_MS = 12000;
+
+function _withTimeout(promise, timeoutMs = PB_EDGE_REQUEST_TIMEOUT_MS, label = 'Request') {
+  let timer;
+  return Promise.race([
+    Promise.resolve(promise),
+    new Promise((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`${label} timed out`)), timeoutMs);
+    }),
+  ]).finally(() => clearTimeout(timer));
+}
+
+async function _fetchWithTimeout(url, options = {}, timeoutMs = PB_EDGE_REQUEST_TIMEOUT_MS) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 async function _invokePaymentSessionFallback(payload) {
   const fnUrl = `${SUPABASE_URL.replace(/\/+$/, '')}/functions/v1/create-payment-session`;
   const sess = await _sb.auth.getSession();
@@ -117,7 +139,7 @@ async function _invokePaymentSessionFallback(payload) {
 
   let res;
   try {
-    res = await fetch(fnUrl, {
+    res = await _fetchWithTimeout(fnUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -143,7 +165,17 @@ async function _invokePaymentSessionFallback(payload) {
 }
 
 async function _invokeEdgeFunction(name, payload = {}, { allowFailure = false } = {}) {
-  const { data, error } = await _sb.functions.invoke(name, { body: payload });
+  let data = null;
+  let error = null;
+  try {
+    ({ data, error } = await _withTimeout(
+      _sb.functions.invoke(name, { body: payload }),
+      PB_EDGE_REQUEST_TIMEOUT_MS,
+      `${name} function`,
+    ));
+  } catch (invokeErr) {
+    error = invokeErr;
+  }
   if (!error && data) return data;
 
   const fnUrl = `${SUPABASE_URL.replace(/\/+$/, '')}/functions/v1/${name}`;
@@ -152,7 +184,7 @@ async function _invokeEdgeFunction(name, payload = {}, { allowFailure = false } 
   const authHeader = accessToken ? `Bearer ${accessToken}` : `Bearer ${SUPABASE_ANON_KEY}`;
 
   try {
-    const res = await fetch(fnUrl, {
+    const res = await _fetchWithTimeout(fnUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -209,6 +241,19 @@ function _bookingEmailPayload(b) {
       total: item.total,
       downpayment: item.downpayment,
     })),
+  };
+}
+
+function _bookingSmsPayload(b) {
+  const payload = _bookingEmailPayload(b);
+  return {
+    bookingRef: payload.bookingRef,
+    contactNumber: payload.contactNumber,
+    date: payload.date,
+    startTime: payload.startTime,
+    endTime: payload.endTime,
+    timeLabel: b.timeLabel || '',
+    bookingItems: payload.bookingItems,
   };
 }
 
@@ -675,8 +720,11 @@ window.DB = {
     if (updates.slots !== undefined) row.slots = updates.slots;
     if (updates.billedAt !== undefined) row.billed_at = updates.billedAt;
     if (updates.weeklyFeeId !== undefined) row.weekly_fee_id = updates.weeklyFeeId;
-    const { error } = await _sb.from('bookings').update(row).eq('ref', ref);
+    const { data, error } = await _sb.from('bookings').update(row).eq('ref', ref).select('ref');
     if (error) { console.error('updateBooking:', error); throw error; }
+    if (!Array.isArray(data) || data.length === 0) {
+      throw new Error('This reservation could not be updated. It may have expired; please select the slot again.');
+    }
     _pbClearFastCache(['bookings']);
   },
 
@@ -1065,7 +1113,17 @@ window.DB = {
     if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
       throw new Error('Supabase configuration missing (SUPABASE_URL / SUPABASE_ANON_KEY).');
     }
-    const { data, error } = await _sb.functions.invoke('create-payment-session', { body: payload });
+    let data = null;
+    let error = null;
+    try {
+      ({ data, error } = await _withTimeout(
+        _sb.functions.invoke('create-payment-session', { body: payload }),
+        PB_EDGE_REQUEST_TIMEOUT_MS,
+        'create-payment-session function',
+      ));
+    } catch (invokeErr) {
+      error = invokeErr;
+    }
     if (!error && data) return data;
 
     // Fallback path: direct HTTP call to the function endpoint. This helps diagnose
@@ -1089,7 +1147,21 @@ window.DB = {
 
   async sendConfirmationEmail(booking, options = {}) {
     if (!booking?.email) return { ok: false, skipped: true, reason: 'No customer email' };
-    return _invokeEdgeFunction('send-confirmation-email', _bookingEmailPayload(booking), {
+    const payload = _bookingEmailPayload(booking);
+    if (options.forceResend) {
+      const nonce = typeof window.crypto?.randomUUID === 'function'
+        ? window.crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      payload.idempotencyKey = `booking-resend-${payload.bookingRef}-${nonce}`.slice(0, 256);
+    }
+    return _invokeEdgeFunction('send-confirmation-email', payload, {
+      allowFailure: !!options.allowFailure,
+    });
+  },
+
+  async sendConfirmationSms(booking, options = {}) {
+    if (!booking?.contactNumber) return { ok: false, skipped: true, reason: 'No customer contact number' };
+    return _invokeEdgeFunction('send-confirmation-sms', _bookingSmsPayload(booking), {
       allowFailure: !!options.allowFailure,
     });
   },
@@ -1388,6 +1460,7 @@ window.DB = {
       maxPlayers: 16,
     }),
     payment_acceptance_mode: 'full_payment_only',
+    gcash_checkout_enabled: '0',
     payment_method_cash: '0',
     payment_method_gcash: '1',
     payment_method_bdopay: '1',
@@ -1397,8 +1470,9 @@ window.DB = {
     gcash_merchant_number: '09XXXXXXXXX',
     gcash_merchant_name: 'Court Owner Name',
     service_fee_rate: '15',
-    maintenance_fee: '5',
-    fee_type: 'per_hour',
+    maintenance_fee: '15',
+    fee_type: 'flat',
+    processor_fee_legacy_cutoff_at: '2026-07-13T15:25:18+08:00',
   });
 
   const defaultAccounts = () => ([{
@@ -1909,6 +1983,7 @@ window.DB = {
     async createPaymentSession() { throw new Error('Online checkout is disabled in local data mode.'); },
     async syncPaymentSession() { return { ok: false, skipped: true, reason: 'Local data mode' }; },
     async sendConfirmationEmail() { return { ok: true, skipped: true, reason: 'Local data mode' }; },
+    async sendConfirmationSms() { return { ok: true, skipped: true, reason: 'Local data mode' }; },
     async sendOpenPlayConfirmationEmail() { return { ok: true, skipped: true, reason: 'Local data mode' }; },
     async sendRescheduleEmail() { return { ok: true, skipped: true, reason: 'Local data mode' }; },
     async sendTelegramNotification() { return { ok: true, skipped: true, reason: 'Local data mode' }; },
@@ -1920,6 +1995,7 @@ window.DB = {
         local: true,
         services: [
           { id: 'email', label: 'Email confirmations', configured: false, required: ['RESEND_API_KEY'], missing: ['RESEND_API_KEY'], note: 'Local data mode' },
+          { id: 'sms', label: 'SMS confirmations', configured: false, required: ['SMS_API_PH_API_KEY'], missing: ['SMS_API_PH_API_KEY'], note: 'Local data mode' },
           { id: 'telegram', label: 'Telegram admin alerts', configured: false, required: ['TELEGRAM_BOT_TOKEN', 'TELEGRAM_CHAT_ID'], missing: ['TELEGRAM_BOT_TOKEN', 'TELEGRAM_CHAT_ID'], note: 'Local data mode' },
           { id: 'payments', label: 'PayMongo checkout', configured: false, required: ['PAYMONGO_SECRET_KEY', 'PAYMENT_SUCCESS_URL', 'PAYMENT_CANCEL_URL'], missing: ['PAYMONGO_SECRET_KEY', 'PAYMENT_SUCCESS_URL', 'PAYMENT_CANCEL_URL'], note: 'Local data mode' },
           { id: 'ocr', label: 'Receipt OCR', configured: false, required: ['GOOGLE_VISION_API_KEY or OCRSPACE_API_KEY'], missing: ['GOOGLE_VISION_API_KEY or OCRSPACE_API_KEY'], note: 'Local data mode' },

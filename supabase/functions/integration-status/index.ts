@@ -68,6 +68,7 @@ Deno.serve(async (req) => {
   const serviceRoleConfigured = hasEnv("SERVICE_ROLE_KEY") || hasEnv("SUPABASE_SERVICE_ROLE_KEY");
   const services: ServiceStatus[] = [
     service("email", "Email confirmations", ["RESEND_API_KEY"], ["EMAIL_FROM"]),
+    service("sms", "SMS confirmations", ["SMS_API_PH_API_KEY"], [], "Sends confirmed booking texts through SMS API PH."),
     service("telegram", "Telegram admin alerts", ["TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"], ["APP_ADMIN_URL"]),
     service("payments", "PayMongo checkout", ["PAYMONGO_SECRET_KEY", "PAYMENT_SUCCESS_URL", "PAYMENT_CANCEL_URL"], ["PAYMENT_WEBHOOK_SECRET"]),
     receiptOcrService(),

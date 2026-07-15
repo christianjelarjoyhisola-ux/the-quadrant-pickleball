@@ -410,7 +410,10 @@ VALUES
   ('venue_name',    'The Quadrant'),
   ('open_time',     '6'),
   ('close_time',    '22'),
-  ('booking_fee',   '5'),
+  ('booking_fee',   '15'),
+  ('maintenance_fee', '15'),
+  ('fee_type', 'flat'),
+  ('processor_fee_legacy_cutoff_at', '2026-07-13T15:25:18+08:00'),
   ('open_play_fee', '100')
 ON CONFLICT (key) DO NOTHING;
 

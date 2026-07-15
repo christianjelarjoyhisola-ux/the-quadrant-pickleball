@@ -97,7 +97,7 @@ function buildBookingMessage(p: BookingPayload): string {
   const paymentRef = p.gcashRef ? `\nPayment ref: <code>${esc(p.gcashRef)}</code>` : "";
   const paidLine = p.downpayment >= p.total
     ? `Full payment: <b>${fmtPHP(p.downpayment)}</b>`
-    : `Downpayment: <b>${fmtPHP(p.downpayment)}</b>`;
+    : `Required payment: <b>${fmtPHP(p.downpayment)}</b>`;
 
   return (
     `<b>NEW BOOKING</b>\n` +
@@ -134,7 +134,7 @@ function buildBookingUpdateMessage(p: BookingUpdatePayload): string {
     `${esc(p.startTime)} - ${esc(p.endTime)} (${p.duration} hr${p.duration !== 1 ? "s" : ""})\n\n` +
     `Payment: <b>${esc(method)}</b>${paymentRef}\n` +
     `Total: ${fmtPHP(p.total)}\n` +
-    `Paid / DP: <b>${fmtPHP(p.downpayment)}</b>` +
+    `Paid / required: <b>${fmtPHP(p.downpayment)}</b>` +
     paymentState +
     bookingState +
     noteLine +

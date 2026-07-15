@@ -5050,6 +5050,7 @@ function nbSetDp(full) {
     btn50.style.background = 'var(--green)'; btn50.style.color = '#fff'; btn50.style.borderColor = 'var(--green)';
     btn100.style.background = 'transparent'; btn100.style.color = 'var(--text2)'; btn100.style.borderColor = 'var(--border)';
   }
+  nbUpdateTotal();
 }
 
 function nbUpdateTotal() {
@@ -5449,6 +5450,8 @@ function nbUpdateTotal() {
   const bookingFee = nbBookingFee(groups);
   const total = courtFee + bookingFee;
   const requiredPayment = nbRequiredPayment(courtFee, bookingFee);
+  const selectedPayment = _nbDpFull ? total : requiredPayment;
+  const remainingBalance = _nbDpFull ? 0 : courtFee / 2;
 
   if ($('nbDp50Amt')) $('nbDp50Amt').textContent = fmt(requiredPayment);
   if ($('nbDp100Amt')) $('nbDp100Amt').textContent = fmt(total);
@@ -5469,8 +5472,8 @@ function nbUpdateTotal() {
     <div class="nb-sum-row"><span>Court Fee</span><strong>${fmt(courtFee)}</strong></div>
     <div class="nb-sum-row"><span>Booking Fee</span><strong>${fmt(bookingFee)}</strong></div>
     <div class="nb-sum-row nb-sum-total"><span>Grand Total</span><span>${fmt(total)}</span></div>
-    <div class="nb-sum-row"><span>Required Payment<br><span class="nb-sum-muted">50% court fee + full booking fee</span></span><strong>${fmt(requiredPayment)}</strong></div>
-    <div class="nb-sum-row"><span>Remaining Court Balance</span><strong>${fmt(courtFee / 2)}</strong></div>
+    <div class="nb-sum-row"><span>${_nbDpFull ? 'Full Payment' : 'Required Payment'}${_nbDpFull ? '' : '<br><span class="nb-sum-muted">50% court fee + full booking fee</span>'}</span><strong>${fmt(selectedPayment)}</strong></div>
+    <div class="nb-sum-row"><span>Remaining Court Balance</span><strong>${fmt(remainingBalance)}</strong></div>
   </div>`;
 }
 

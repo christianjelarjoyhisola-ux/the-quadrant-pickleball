@@ -214,7 +214,10 @@ BEGIN
         AND lower(coalesce(b.status, '')) NOT IN ('confirmed', 'completed')
       )
       AND (
-        lower(coalesce(b.status, '')) != 'verifying'
+        (
+          lower(coalesce(b.status, '')) != 'verifying'
+          AND lower(coalesce(b.email, '')) != 'reserve@hold.internal'
+        )
         OR b.created_at IS NULL
         OR b.created_at > (now() - interval '15 minutes')
       )

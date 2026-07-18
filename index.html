@@ -5796,6 +5796,12 @@ function isHeldWithinReservationWindow(b) {
   return age < RESERVATION_MINUTES * 60 * 1000;
 }
 
+function isPlaceholderBookingHold(b) {
+  const email = String(b?.email || '').trim().toLowerCase();
+  const name = String(b?.fullName || b?.full_name || '').trim().toLowerCase();
+  return email === 'reserve@hold.internal' || name === 'reserving...' || name === 'reserving…';
+}
+
 function isPendingPaymentHold(b) {
   const status = String(b?.status || '').toLowerCase();
   const payStatus = String(b?.paymentStatus || b?.payment_status || '').toLowerCase();
@@ -5806,7 +5812,7 @@ function isPendingPaymentHold(b) {
 }
 
 function isHeldVerifying(b) {
-  if (b.status !== 'verifying') return false;
+  if (bookingStatusValue(b) !== 'verifying') return false;
   if (!b.createdAt) return true; // no timestamp → treat as fresh hold
   return (Date.now() - new Date(b.createdAt).getTime()) < RESERVATION_MINUTES * 60 * 1000;
 }
@@ -5841,6 +5847,9 @@ function bookingHoldsSlot(b) {
   if (status === 'cancelled') return false;
   if (NON_HOLDING_PAYMENT_STATUSES.has(paymentStatus)) return false;
   if (!HOLDING_BOOKING_STATUSES.has(status)) return false;
+  // Placeholder rows are always temporary, including legacy rows that were
+  // accidentally saved as pending. An abandoned form must not lock a slot.
+  if (isPlaceholderBookingHold(b)) return isHeldWithinReservationWindow(b);
   if (status === 'verifying') return isHeldVerifying(b);
   if (isPendingPaymentHold(b)) return isHeldWithinReservationWindow(b);
   return true;
@@ -5849,6 +5858,7 @@ function bookingHoldsSlot(b) {
 function bookingShowsPendingSlot(b) {
   const status = String(b?.status || '').toLowerCase();
   const payStatus = String(b?.paymentStatus || b?.payment_status || '').toLowerCase();
+  if (isPlaceholderBookingHold(b)) return bookingHoldsSlot(b);
   if (status === 'verifying') return true;
   if (isPendingPaymentHold(b)) return isHeldWithinReservationWindow(b);
   if (status === 'pending' && ['pending', 'unpaid', 'for_verification', ''].includes(payStatus)) return true;
@@ -5979,8 +5989,8 @@ async function proceedToBookLegacy(courtId) {
     total:         cardSel.slots.reduce((s, h) => s + getRateForHour(h), 0) + calcSvcFee(cardSel.slots.length),
     paymentMethod: 'gcash',
     paymentFlow:   null,
-    paymentStatus: 'for_verification',
-    status:        'pending',
+    paymentStatus: 'unpaid',
+    status:        'verifying',
     createdAt:     reserveStartedAt,
     downpayment:   null,
     gcashRef:      null,
@@ -6087,8 +6097,8 @@ async function proceedToBook(courtId = null) {
         total:         item.total,
         paymentMethod: 'gcash',
         paymentFlow:   null,
-        paymentStatus: 'for_verification',
-        status:        'pending',
+        paymentStatus: 'unpaid',
+        status:        'verifying',
         createdAt:     reserveStartedAt,
         downpayment:   null,
         gcashRef:      null,

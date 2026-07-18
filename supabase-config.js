@@ -401,6 +401,12 @@ function _pbHasGatewaySession(b) {
   );
 }
 
+function _pbIsPlaceholderHold(b) {
+  const email = String(b?.email || '').trim().toLowerCase();
+  const name = String(b?.full_name || b?.fullName || '').trim().toLowerCase();
+  return email === 'reserve@hold.internal' || name === 'reserving...' || name === 'reserving…';
+}
+
 function bookingHoldsSlotForConflict(b) {
   if (!b) return false;
   const status = _pbBookingStatus(b);
@@ -412,6 +418,7 @@ function bookingHoldsSlotForConflict(b) {
   const provider = String(b.paymentProvider || b.payment_provider || '').toLowerCase();
   const hasProviderSession = _pbHasGatewaySession(b);
   const isTemporaryHold =
+    _pbIsPlaceholderHold(b) ||
     status === 'verifying' ||
     ((provider.includes('paymongo') || hasProviderSession) && status === 'pending' && ['pending', 'unpaid', 'for_verification', ''].includes(payStatus));
   if (!isTemporaryHold) return true;
@@ -671,7 +678,7 @@ window.DB = {
     // Check for slot conflicts before inserting
     const { data: existing } = await _sb
       .from('bookings')
-      .select('ref, status, payment_status, payment_provider, payment_session_id, payment_checkout_url, slots, created_at')
+      .select('ref, full_name, email, status, payment_status, payment_provider, payment_session_id, payment_checkout_url, slots, created_at')
       .eq('court_id', booking.courtId)
       .eq('date', booking.date)
       .neq('status', 'cancelled');

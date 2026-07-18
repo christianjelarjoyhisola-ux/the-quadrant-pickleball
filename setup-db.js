@@ -199,11 +199,14 @@ async function run() {
             AND (b.payment_provider IS NOT NULL OR b.payment_session_id IS NOT NULL OR b.payment_checkout_url IS NOT NULL)
             AND lower(coalesce(b.status, '')) NOT IN ('confirmed', 'completed')
           )
-          AND (
+        AND (
+          (
             lower(coalesce(b.status, '')) != 'verifying'
-            OR b.created_at IS NULL
-            OR b.created_at > (now() - interval '15 minutes')
+            AND lower(coalesce(b.email, '')) != 'reserve@hold.internal'
           )
+          OR b.created_at IS NULL
+          OR b.created_at > (now() - interval '15 minutes')
+        )
       ) THEN
         RAISE EXCEPTION 'One or more time slots are already booked for this court and date.';
       END IF;

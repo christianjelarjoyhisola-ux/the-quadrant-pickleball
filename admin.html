@@ -3192,7 +3192,8 @@ function bookingHoldsAdminSlot(b) {
   if (ADMIN_NON_HOLDING_PAYMENT_STATUSES.has(paymentStatus)) return false;
   if (paymentStatus === 'unpaid' && adminHasGatewaySession(b) && status !== 'confirmed' && status !== 'completed') return false;
   if (!ADMIN_HOLDING_BOOKING_STATUSES.has(status)) return false;
-  if (status !== 'verifying') return true;
+  // Legacy placeholder rows may say pending, but they are still temporary.
+  if (status !== 'verifying' && !isPlaceholderHold(b)) return true;
   const created = b.createdAt || b.created_at;
   if (!created) return true;
   const createdMs = new Date(created).getTime();

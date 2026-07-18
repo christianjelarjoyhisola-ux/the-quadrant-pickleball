@@ -1707,8 +1707,9 @@ tr:hover td { background: var(--bg2); }
             <div style="font-size:1.15rem;font-weight:800;color:var(--text)" id="mfGrossFee">₱0.00</div>
           </div>
           <div class="mf-tile" style="background:var(--input);border:1px solid var(--border);border-radius:10px;padding:14px;text-align:center">
-            <div class="mf-tile-label" style="font-size:.72rem;color:var(--text3);margin-bottom:3px;text-transform:uppercase;letter-spacing:.5px">PayMongo Fee (1.34%)</div>
+            <div class="mf-tile-label" id="mfProcessorFeeLabel" style="font-size:.72rem;color:var(--text3);margin-bottom:3px;text-transform:uppercase;letter-spacing:.5px">Legacy PayMongo Fee (1.34%)</div>
             <div style="font-size:1.15rem;font-weight:800;color:var(--text)" id="mfProcessorFee">₱0.00</div>
+            <div style="font-size:.63rem;color:var(--text3);margin-top:4px;line-height:1.25" id="mfProcessorFeeCutoff"></div>
           </div>
           <div class="mf-tile" style="background:rgba(var(--yellow-rgb),.12);border:1.5px solid rgba(var(--yellow-rgb),.4);border-radius:10px;padding:14px;text-align:center">
             <div style="font-size:1.6rem;font-weight:800;color:var(--yellow)" id="mfFee">₱0.00</div>
@@ -3087,17 +3088,41 @@ function bookingPaidAmountForProcessorFee(b) {
   }
   return 0;
 }
-function bookingProcessorFeeAmount(b) {
+function bookingUsesLegacyProcessorFee(b, legacyCutoffAt = '') {
+  if (!legacyCutoffAt) return true; // Preserve the original calculation until a cutover is configured.
+  const cutoffMs = new Date(legacyCutoffAt).getTime();
+  if (!Number.isFinite(cutoffMs)) return true;
+  const createdMs = new Date(b?.createdAt || b?.created_at || '').getTime();
+  if (!Number.isFinite(createdMs)) return true; // Undated historical rows remain legacy.
+  return createdMs < cutoffMs;
+}
+function bookingProcessorFeeAmount(b, legacyCutoffAt = '') {
+  if (!bookingUsesLegacyProcessorFee(b, legacyCutoffAt)) return 0;
   const paymentRail = b?.paymentProvider || b?.payment_provider || b?.paymentMethod || b?.payment_method;
   if (!isDigitalPayment(paymentRail)) return 0;
   return bookingPaidAmountForProcessorFee(b) * PAYMONGO_PROCESSOR_FEE_RATE;
 }
-function bookingGroupProcessorFeeAmount(group) {
+function bookingGroupProcessorFeeAmount(group, legacyCutoffAt = '') {
   const items = group?.items || [group];
-  return items.reduce((sum, item) => sum + bookingProcessorFeeAmount(item), 0);
+  return items.reduce((sum, item) => sum + bookingProcessorFeeAmount(item, legacyCutoffAt), 0);
+}
+function roundMoneyAmount(value) {
+  return Math.round(((Number(value) || 0) + Number.EPSILON) * 100) / 100;
 }
 function netPlatformFeeAmount(grossFee, processorFee) {
-  return Math.max(0, (Number(grossFee) || 0) - (Number(processorFee) || 0));
+  return roundMoneyAmount(Math.max(0, (Number(grossFee) || 0) - (Number(processorFee) || 0)));
+}
+function formatPhDateTime(value) {
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '';
+  return new Intl.DateTimeFormat('en-PH', {
+    timeZone: 'Asia/Manila',
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  }).format(d);
 }
 function phDateKeyFromTimestamp(value) {
   if (!value) return '';
@@ -3752,6 +3777,8 @@ async function renderMaintFee() {
   // Load rate and charging method from DB settings.
   const settings = await DB.getSettings();
   const configuredRate = readPlatformFeeAmount(settings);
+  const legacyProcessorCutoffAt = settings.processor_fee_legacy_cutoff_at || '';
+  const legacyProcessorCutoffLabel = formatPhDateTime(legacyProcessorCutoffAt);
   _maintRate = configuredRate ?? 0;
   _maintFeeType = normalizePlatformFeeType(settings.fee_type);
   const isFlat = _maintFeeType === 'flat';
@@ -3771,13 +3798,15 @@ async function renderMaintFee() {
   const totalBookings = filteredTxns.length;
   const totalHours = filtered.reduce((s, b) => s + (parseInt(b.duration) || 0), 0);
   const grossFee = isFlat ? totalBookings * _maintRate : totalHours * _maintRate;
-  const processorFee = filteredTxns.reduce((sum, group) => sum + bookingGroupProcessorFeeAmount(group), 0);
+  const processorFee = roundMoneyAmount(filteredTxns.reduce((sum, group) => sum + bookingGroupProcessorFeeAmount(group, legacyProcessorCutoffAt), 0));
   const totalFee = netPlatformFeeAmount(grossFee, processorFee);
 
   $('mfBookings').textContent = totalBookings;
   $('mfHours').textContent = totalHours;
   if ($('mfGrossFee')) $('mfGrossFee').textContent = fmt(grossFee);
   if ($('mfProcessorFee')) $('mfProcessorFee').textContent = fmt(processorFee);
+  if ($('mfProcessorFeeLabel')) $('mfProcessorFeeLabel').textContent = legacyProcessorCutoffAt ? 'Legacy PayMongo Fee (1.34%)' : 'PayMongo Fee (1.34%)';
+  if ($('mfProcessorFeeCutoff')) $('mfProcessorFeeCutoff').textContent = legacyProcessorCutoffLabel ? `Bookings before ${legacyProcessorCutoffLabel}` : '';
   $('mfFee').textContent = fmt(totalFee);
 
   // Breakdown by court
@@ -3810,17 +3839,24 @@ async function renderMaintFee() {
       </div>`;
     }).join('');
 
-  const totalLine = isFlat
-    ? `${totalBookings} confirmed booking transaction${totalBookings !== 1 ? 's' : ''} × ₱${_maintRate.toFixed(2)} = <span style="color:var(--yellow);font-size:1rem">${fmt(totalFee)}</span>`
-    : `${totalHours} hr${totalHours !== 1 ? 's' : ''} × ₱${_maintRate.toFixed(2)} = <span style="color:var(--yellow);font-size:1rem">${fmt(totalFee)}</span>`;
+  const grossLine = isFlat
+    ? `${totalBookings} confirmed booking transaction${totalBookings !== 1 ? 's' : ''} × ₱${_maintRate.toFixed(2)}`
+    : `${totalHours} hr${totalHours !== 1 ? 's' : ''} × ₱${_maintRate.toFixed(2)}`;
+  const cutoverLine = legacyProcessorCutoffLabel
+    ? `<div style="margin-top:10px;padding:8px 10px;border-radius:7px;background:rgba(var(--yellow-rgb),.08);color:var(--text2)">
+        Full ${platformFeeLabel({ amount: _maintRate, type: _maintFeeType }, { short: true })} (no PayMongo deduction) applies to bookings made on or after <strong>${legacyProcessorCutoffLabel}</strong> Manila time.
+      </div>`
+    : '';
 
   $('mfBreakdown').innerHTML = `
     <div style="font-weight:700;margin-bottom:8px;color:var(--text)">📊 Booking-date breakdown for ${monthLabel}</div>
     ${rows}
-    <div style="display:flex;justify-content:space-between;margin-top:10px;padding-top:8px;font-weight:700;font-size:.9rem">
-      <span>Total</span>
-      <span>${totalLine}</span>
-    </div>`;
+    <div style="margin-top:10px;padding-top:8px;border-top:1px solid var(--border);font-size:.86rem">
+      <div style="display:flex;justify-content:space-between;gap:12px"><span>Gross fee (${grossLine})</span><strong>${fmt(grossFee)}</strong></div>
+      <div style="display:flex;justify-content:space-between;gap:12px;color:var(--text3)"><span>Legacy PayMongo deduction</span><strong>−${fmt(processorFee)}</strong></div>
+      <div style="display:flex;justify-content:space-between;gap:12px;margin-top:5px;color:var(--yellow);font-size:.94rem"><span>Net fee to remit</span><strong>${fmt(totalFee)}</strong></div>
+    </div>
+    ${cutoverLine}`;
 }
 
 async function saveMaintRate() {
@@ -6571,7 +6607,7 @@ async function generateWeeklyStatement() {
         ? feeCfg.amount
         : (g.items || [g]).reduce((s, b) => s + calcPlatformFeeForBooking(b, feeCfg), 0));
     }, 0);
-    const processorFeeDue = eligibleGroups.reduce((sum, g) => sum + bookingGroupProcessorFeeAmount(g), 0);
+    const processorFeeDue = roundMoneyAmount(eligibleGroups.reduce((sum, g) => sum + bookingGroupProcessorFeeAmount(g, settings.processor_fee_legacy_cutoff_at || ''), 0));
     const amountDue = netPlatformFeeAmount(grossAmountDue, processorFeeDue);
 
     const due = new Date(end);

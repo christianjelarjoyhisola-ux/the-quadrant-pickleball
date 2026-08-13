@@ -20,6 +20,7 @@
 // ----------------------------------------------------------------------------
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import { sendTelegramHtml } from "../_shared/telegram.ts";
 import { Image } from "https://deno.land/x/imagescript@1.2.17/mod.ts";
 
 const corsHeaders = {
@@ -825,17 +826,7 @@ async function runOCR(
 }
 
 async function sendTelegram(message: string) {
-  const botToken = Deno.env.get("TELEGRAM_BOT_TOKEN") || "";
-  const chatIdRaw = Deno.env.get("TELEGRAM_CHAT_ID") || "";
-  if (!botToken || !chatIdRaw) return;
-  const chatIds = chatIdRaw.split(",").map((s) => s.trim()).filter(Boolean);
-  await Promise.allSettled(chatIds.map((chatId) =>
-    fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ chat_id: chatId, text: message, parse_mode: "HTML" }),
-    })
-  ));
+  await sendTelegramHtml(message);
 }
 
 // ── handler ─────────────────────────────────────────────────────────────────

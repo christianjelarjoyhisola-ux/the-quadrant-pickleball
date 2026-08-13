@@ -1,3 +1,5 @@
+import { activeTelegramChatIds, sendTelegramHtml } from "../_shared/telegram.ts";
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
@@ -165,16 +167,14 @@ Deno.serve(async (req) => {
 
   try {
     const botToken = Deno.env.get("TELEGRAM_BOT_TOKEN") || "";
-    const chatIdRaw = Deno.env.get("TELEGRAM_CHAT_ID") || "";
 
-    if (!botToken || !chatIdRaw) {
+    if (!botToken) {
       return new Response(JSON.stringify({ ok: true, skipped: true, reason: "Telegram not configured" }), {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const chatIds = chatIdRaw.split(",").map((id) => id.trim()).filter(Boolean);
     const body = (await req.json()) as Payload;
 
     let message: string;
@@ -206,28 +206,15 @@ Deno.serve(async (req) => {
       message = buildBookingMessage(b);
     }
 
-    const results = await Promise.allSettled(
-      chatIds.map(async (chatId) => {
-        const res = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            chat_id: chatId,
-            text: message,
-            parse_mode: "HTML",
-            disable_web_page_preview: true,
-          }),
-        });
-        const json = await res.json().catch(() => ({}));
-        if (!res.ok) throw new Error(`Chat ${chatId}: ${res.status} ${JSON.stringify(json)}`);
-        return { chatId, ok: true };
-      }),
-    );
-
-    const failed = results.filter((r) => r.status === "rejected");
-    if (failed.length > 0) {
-      console.error("Some Telegram sends failed:", failed.map((r) => (r as PromiseRejectedResult).reason));
+    const chatIds = await activeTelegramChatIds();
+    if (chatIds.length === 0) {
+      return new Response(JSON.stringify({ ok: true, skipped: true, reason: "No active Telegram chats" }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
     }
+    const results = await sendTelegramHtml(message);
+    const failed = results.filter((result) => !result.ok);
 
     return new Response(JSON.stringify({ ok: true, sent: chatIds.length, failed: failed.length }), {
       status: 200,

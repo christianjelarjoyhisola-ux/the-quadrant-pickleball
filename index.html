@@ -919,7 +919,8 @@ body.dark .shared-date-display {
 .bk-modal-ft .btn:disabled { opacity:.62; cursor:wait; transform:none; }
 
 /* Required booking-rules acknowledgement */
-.booking-rules-overlay { z-index:420; }
+.booking-rules-overlay { z-index:1100; }
+.booking-rules-overlay.active ~ .mobile-book-bar { display:none !important; }
 .booking-rules-modal { max-width:560px; }
 .booking-rules-intro {
   margin:0 0 14px; color:var(--muted); font-size:.88rem; line-height:1.55;
@@ -2712,7 +2713,7 @@ body.light #splashScreen { background: #071320; }
 </div>
 
 <!-- SPLASH SCREEN -->
-<div id="splashScreen" onclick="dismissSplash()">
+<div id="splashScreen" onclick="openSplashBookingRules()">
   <div class="sp-glow"></div>
   <div class="sp-grid"></div>
   <div class="sp-ring"></div>
@@ -5946,6 +5947,7 @@ function bookingShowsPendingSlot(b) {
 let lateNightExtensionResolver = null;
 let bookingRulesResolver = null;
 let bookingRulesPreviousOverflow = '';
+let splashRulesOpening = false;
 
 function updateBookingRulesContinue() {
   const agree = $('bookingRulesAgree');
@@ -5985,6 +5987,14 @@ function resolveBookingRules(accepted) {
   const resolver = bookingRulesResolver;
   bookingRulesResolver = null;
   if (resolver) resolver(!!accepted);
+}
+
+async function openSplashBookingRules() {
+  if (splashRulesOpening) return;
+  splashRulesOpening = true;
+  const accepted = await showBookingRulesPrompt();
+  splashRulesOpening = false;
+  if (accepted) dismissSplash();
 }
 
 function selectedOnlyElevenToMidnight(selections = []) {
@@ -6090,9 +6100,6 @@ async function proceedToBookLegacy(courtId) {
   }
 
   // ── Lock the slot NOW before showing the form ─────────────────────────
-  const rulesAccepted = await showBookingRulesPrompt();
-  if (!rulesAccepted) return;
-
   const reserveRef = genRef();
   const reserveStartedAt = new Date().toISOString();
   const reserveData = {
@@ -6175,9 +6182,6 @@ async function proceedToBook(courtId = null) {
     await Promise.allSettled(selections.map(sel => onCardDate(sel.courtId, sel.date)));
     return;
   }
-
-  const rulesAccepted = await showBookingRulesPrompt();
-  if (!rulesAccepted) return;
 
   let bookingSelections = uniqueBookingSelections(selections);
   const extensionCandidate = await lateNightExtensionCandidate(selections);

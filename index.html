@@ -918,6 +918,43 @@ body.dark .shared-date-display {
 .bk-modal-ft .btn { flex:1; justify-content:center; }
 .bk-modal-ft .btn:disabled { opacity:.62; cursor:wait; transform:none; }
 
+/* Required booking-rules acknowledgement */
+.booking-rules-overlay { z-index:420; }
+.booking-rules-modal { max-width:560px; }
+.booking-rules-intro {
+  margin:0 0 14px; color:var(--muted); font-size:.88rem; line-height:1.55;
+}
+.booking-rules-list {
+  display:grid; gap:10px; margin:0; padding:0; list-style:none;
+}
+.booking-rule {
+  display:grid; grid-template-columns:32px minmax(0,1fr); gap:11px; align-items:flex-start;
+  padding:12px; border:1px solid var(--border); border-radius:10px; background:var(--input);
+}
+.booking-rule-num {
+  width:32px; height:32px; display:flex; align-items:center; justify-content:center;
+  border-radius:50%; background:rgba(var(--ac),.14); border:1px solid rgba(var(--ac),.35);
+  color:var(--accent); font-size:.78rem; font-weight:900;
+}
+.booking-rule strong { display:block; margin-bottom:2px; color:var(--text); font-size:.88rem; }
+.booking-rule span:last-child { color:var(--muted); font-size:.8rem; line-height:1.45; }
+.booking-rules-agree {
+  display:grid; grid-template-columns:auto minmax(0,1fr); gap:10px; align-items:flex-start;
+  margin-top:16px; padding:12px; border:1px solid rgba(var(--ac),.32); border-radius:10px;
+  background:rgba(var(--ac),.07); color:var(--text); font-size:.84rem; font-weight:700; line-height:1.45;
+  cursor:pointer;
+}
+.booking-rules-agree input { width:19px; height:19px; margin-top:1px; accent-color:var(--accent); }
+.booking-rules-modal .btn:disabled { opacity:.45; cursor:not-allowed; transform:none; box-shadow:none; }
+@media(max-width:520px) {
+  .booking-rules-overlay { padding:10px; }
+  .booking-rules-modal { max-height:96vh; }
+  .booking-rules-modal .bk-modal-hd { padding:15px 16px; }
+  .booking-rules-modal .bk-modal-body { padding:16px; }
+  .booking-rules-modal .bk-modal-ft { padding:12px 16px; }
+  .booking-rule { padding:10px; }
+}
+
 .qr-zoom-overlay {
   position:fixed; inset:0; z-index:9999; display:none; align-items:center; justify-content:center;
   background:rgba(0,0,0,.78); padding:24px;
@@ -2927,6 +2964,47 @@ body.light #splashScreen { background: #071320; }
 </div>
 
 <!-- BOOKING MODAL — 5-step wizard -->
+<!-- REQUIRED BOOKING & COURT RULES -->
+<div class="bk-modal-overlay booking-rules-overlay" id="bookingRulesModal" aria-hidden="true">
+  <div class="bk-modal booking-rules-modal" role="dialog" aria-modal="true" aria-labelledby="bookingRulesTitle" aria-describedby="bookingRulesIntro">
+    <div class="bk-modal-hd">
+      <div>
+        <div class="bk-modal-court" id="bookingRulesTitle">Before You Book</div>
+        <div class="bk-modal-meta">Booking &amp; Court Rules</div>
+      </div>
+    </div>
+    <div class="bk-modal-body">
+      <p class="booking-rules-intro" id="bookingRulesIntro">Please take a moment to read all four rules. They help every booking start safely and on time.</p>
+      <ol class="booking-rules-list">
+        <li class="booking-rule">
+          <span class="booking-rule-num">1</span>
+          <span><strong>Punctual transitions</strong>Vacate the court exactly when your time slot ends so the next booking can start on time.</span>
+        </li>
+        <li class="booking-rule">
+          <span class="booking-rule-num">2</span>
+          <span><strong>No mid-game extensions</strong>Stop playing immediately when your time is up, even if the match is not finished.</span>
+        </li>
+        <li class="booking-rule">
+          <span class="booking-rule-num">3</span>
+          <span><strong>One-time rescheduling</strong>A reservation may be rescheduled only once and at least 2 hours before its original time slot. Otherwise, the booking is forfeited.</span>
+        </li>
+        <li class="booking-rule">
+          <span class="booking-rule-num">4</span>
+          <span><strong>Proper footwear only</strong>Wear clean, non-marking athletic court shoes. Sandals, boots, and bare feet are not permitted.</span>
+        </li>
+      </ol>
+      <label class="booking-rules-agree">
+        <input type="checkbox" id="bookingRulesAgree" onchange="updateBookingRulesContinue()" />
+        <span>I have read and understand all four Booking &amp; Court Rules.</span>
+      </label>
+    </div>
+    <div class="bk-modal-ft">
+      <button class="btn btn-g" type="button" onclick="resolveBookingRules(false)">Cancel</button>
+      <button class="btn btn-p" id="bookingRulesContinue" type="button" onclick="resolveBookingRules(true)" disabled>I Agree &amp; Continue</button>
+    </div>
+  </div>
+</div>
+
 <div class="bk-modal-overlay" id="bookModal">
   <div class="bk-modal">
 
@@ -5866,6 +5944,48 @@ function bookingShowsPendingSlot(b) {
 }
 
 let lateNightExtensionResolver = null;
+let bookingRulesResolver = null;
+let bookingRulesPreviousOverflow = '';
+
+function updateBookingRulesContinue() {
+  const agree = $('bookingRulesAgree');
+  const continueBtn = $('bookingRulesContinue');
+  if (continueBtn) continueBtn.disabled = !agree?.checked;
+}
+
+function showBookingRulesPrompt() {
+  const modal = $('bookingRulesModal');
+  if (!modal) return Promise.resolve(true);
+
+  const agree = $('bookingRulesAgree');
+  if (agree) agree.checked = false;
+  updateBookingRulesContinue();
+
+  bookingRulesPreviousOverflow = document.body.style.overflow;
+  modal.classList.add('active');
+  modal.setAttribute('aria-hidden', 'false');
+  document.body.style.overflow = 'hidden';
+  setTimeout(() => agree?.focus(), 80);
+
+  return new Promise(resolve => { bookingRulesResolver = resolve; });
+}
+
+function resolveBookingRules(accepted) {
+  const agree = $('bookingRulesAgree');
+  if (accepted && !agree?.checked) {
+    agree?.focus();
+    return;
+  }
+
+  const modal = $('bookingRulesModal');
+  modal?.classList.remove('active');
+  modal?.setAttribute('aria-hidden', 'true');
+  document.body.style.overflow = bookingRulesPreviousOverflow;
+
+  const resolver = bookingRulesResolver;
+  bookingRulesResolver = null;
+  if (resolver) resolver(!!accepted);
+}
 
 function selectedOnlyElevenToMidnight(selections = []) {
   const distinctCourts = new Set(selections.map(sel => String(sel.courtId || '')));
@@ -5970,6 +6090,9 @@ async function proceedToBookLegacy(courtId) {
   }
 
   // ── Lock the slot NOW before showing the form ─────────────────────────
+  const rulesAccepted = await showBookingRulesPrompt();
+  if (!rulesAccepted) return;
+
   const reserveRef = genRef();
   const reserveStartedAt = new Date().toISOString();
   const reserveData = {
@@ -6052,6 +6175,9 @@ async function proceedToBook(courtId = null) {
     await Promise.allSettled(selections.map(sel => onCardDate(sel.courtId, sel.date)));
     return;
   }
+
+  const rulesAccepted = await showBookingRulesPrompt();
+  if (!rulesAccepted) return;
 
   let bookingSelections = uniqueBookingSelections(selections);
   const extensionCandidate = await lateNightExtensionCandidate(selections);

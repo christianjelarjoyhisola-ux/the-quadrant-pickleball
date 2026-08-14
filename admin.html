@@ -2951,7 +2951,7 @@ tr:hover td { background: var(--bg2); }
     </div>
     <div class="m-foot">
       <button class="btn btn-g" onclick="closeModal('rescheduleModal')">Cancel</button>
-      <button class="btn btn-p" onclick="saveReschedule()">📅 Reschedule & Notify</button>
+      <button class="btn btn-p" id="rsSaveBtn" onclick="saveReschedule()">📅 Reschedule & Notify</button>
     </div>
   </div>
 </div>
@@ -3577,10 +3577,9 @@ function bookingDetailsButton(b){
   return `<button class="btn btn-sm" style="background:rgba(200,160,96,.15);color:var(--yellow);border:1px solid rgba(200,160,96,.35);font-weight:700" onclick="openVerifyModal('${jsArg(actionRef)}')">Details</button>`;
 }
 function bookingActionsHtml(b, canDelete){
-  const grouped = Array.isArray(b.items) && b.items.length > 1;
   const actionRef = b.primaryRef || b.ref;
   return `${bookingDetailsButton(b)}
-    ${!grouped && b.status!=='cancelled'?`<button class="btn btn-sm" style="background:rgba(74,154,220,.12);color:#5a9ad4;border:1px solid rgba(74,154,220,.3)" onclick="openRescheduleModal('${jsArg(actionRef)}')">Reschedule</button>`:''}
+    ${b.status!=='cancelled'?`<button class="btn btn-sm" style="background:rgba(74,154,220,.12);color:#5a9ad4;border:1px solid rgba(74,154,220,.3)" onclick="openRescheduleModal('${jsArg(actionRef)}')">Reschedule</button>`:''}
     ${b.status==='confirmed' && b.email?`<button class="btn btn-sm" style="background:rgba(var(--green-rgb),.12);color:var(--green);border:1px solid rgba(var(--green-rgb),.3)" onclick="resendConfirmationEmail('${jsArg(actionRef)}')">Resend Email</button>`:''}
     <select class="fi" style="padding:4px 7px;font-size:.76rem;width:auto" onchange="updateStatus('${jsArg(actionRef)}',this.value)">
       ${b.status==='mixed'?'<option value="mixed" selected disabled>Mixed</option>':''}
@@ -5653,14 +5652,21 @@ function updateRsEndTime() {
 
 async function openRescheduleModal(ref) {
   const group = await getBookingGroupByRef(ref);
-  if (group?.isGroup) { toast('Grouped bookings must be rescheduled court-by-court from individual booking records.', 'inf'); return; }
-  const b = await DB.getBookingByRef(ref);
-  if (!b) { toast('Booking not found.', 'err'); return; }
+  if (!group) { toast('Booking not found.', 'err'); return; }
+  const b = group.items?.[0] || group;
 
-  $('rsOldCourt').textContent = b.courtName;
-  $('rsOldDate').textContent = fmtD(b.date);
-  $('rsOldTime').textContent = `${b.startTime} – ${b.endTime}`;
-  $('rsName').textContent = b.fullName;
+  // Rescheduling uses the same availability rules as Book for Customer.
+  const settings = await DB.getSettings();
+  _nbOpenHour = parseInt(settings.open_hour || '6', 10);
+  _nbCloseHour = parseInt(settings.close_hour || '22', 10);
+  _nbOperatingWindows = parseOperatingWindows(settings);
+  try { _nbOpenPlayCfg = settings.open_play_config ? JSON.parse(settings.open_play_config) : null; } catch (e) { _nbOpenPlayCfg = null; }
+  try { _nbMaintenanceCfg = settings.maintenance_config ? JSON.parse(settings.maintenance_config) : null; } catch (e) { _nbMaintenanceCfg = null; }
+
+  $('rsOldCourt').textContent = group.courtName || b.courtName;
+  $('rsOldDate').textContent = group.dateLabel || fmtD(b.date);
+  $('rsOldTime').textContent = group.timeLabel || `${b.startTime} – ${b.endTime}`;
+  $('rsName').textContent = group.fullName || b.fullName;
 
   // Default to tomorrow
   const tomorrow = new Date();
@@ -5676,11 +5682,47 @@ async function openRescheduleModal(ref) {
 
   $('rsNote').value = 'Due to expected heavy rain, we have rescheduled your booking for your safety and convenience. We apologize for the inconvenience!';
 
-  $('rescheduleModal').dataset.ref = ref;
+  $('rescheduleModal').dataset.ref = group.primaryRef || ref;
   $('rescheduleModal').dataset.oldDate = b.date;
   $('rescheduleModal').dataset.oldStart = b.startTime;
   $('rescheduleModal').dataset.oldEnd = b.endTime;
   $('rescheduleModal').classList.add('show');
+}
+
+async function validateRescheduleDestination(group, newDate, slots) {
+  const allowedHours = new Set(_nbBookableHours());
+  if (slots.some(hour => !allowedHours.has(hour))) {
+    return 'That time is outside the configured operating hours.';
+  }
+
+  const now = new Date();
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  if (newDate < today || (newDate === today && slots.some(hour => hour <= now.getHours()))) {
+    return 'Please choose a future time.';
+  }
+
+  const items = uniqueBookingGroupItems(group.allItems || group.items || [group]);
+  for (const item of items) {
+    if (slots.some(hour => _nbIsMaintenanceHour(newDate, hour, item.courtId))) {
+      return `${item.courtName || 'A selected court'} is blocked for maintenance at that time.`;
+    }
+    if (slots.some(hour => _nbIsOpenPlayHour(newDate, hour, item.courtId))) {
+      return `${item.courtName || 'A selected court'} is reserved for open play at that time.`;
+    }
+  }
+
+  const ownRefs = new Set((group.allItems || group.items || [group]).map(item => String(item.ref)));
+  const targetCourtIds = new Set(items.map(item => String(item.courtId)));
+  const requested = new Set(slots.map(Number));
+  const bookings = await DB.getBookings();
+  const conflict = bookings.find(item =>
+    !ownRefs.has(String(item.ref)) &&
+    targetCourtIds.has(String(item.courtId)) &&
+    item.date === newDate &&
+    bookingHoldsAdminSlot(item) &&
+    (item.slots || []).some(hour => requested.has(Number(hour)))
+  );
+  return conflict ? `${conflict.courtName || 'A selected court'} is already booked at that time.` : '';
 }
 
 async function saveReschedule() {
@@ -5702,22 +5744,52 @@ async function saveReschedule() {
   const slots = Array.from({ length: dur }, (_, i) => startH + i);
   const newStartTime = fmtHour(startH);
   const newEndTime = fmtHour(endH);
+  const btn = $('rsSaveBtn');
 
   try {
-    await DB.updateBooking(ref, {
-      date: newDate,
-      startTime: newStartTime,
-      endTime: newEndTime,
-      duration: dur,
-      slots,
-    });
+    btn.disabled = true;
+    btn.textContent = 'Rescheduling...';
+    const group = await getBookingGroupByRef(ref);
+    if (!group) throw new Error('Booking not found.');
+    const conflictMessage = await validateRescheduleDestination(group, newDate, slots);
+    if (conflictMessage) throw new Error(conflictMessage);
+
+    const items = group.allItems || group.items || [group];
+    const originals = items.map(item => ({
+      ref: item.ref,
+      date: item.date,
+      startTime: item.startTime,
+      endTime: item.endTime,
+      duration: item.duration,
+      slots: [...(item.slots || [])],
+    }));
+    const updatedRefs = [];
+    try {
+      for (const item of items) {
+        await DB.updateBooking(item.ref, {
+          date: newDate,
+          startTime: newStartTime,
+          endTime: newEndTime,
+          duration: dur,
+          slots,
+        });
+        updatedRefs.push(item.ref);
+      }
+    } catch (updateError) {
+      // A conflict can still occur after preflight. Restore any child rows
+      // already moved so a multi-court booking never remains half-moved.
+      await Promise.allSettled(originals
+        .filter(item => updatedRefs.includes(item.ref))
+        .map(item => DB.updateBooking(item.ref, item)));
+      throw updateError;
+    }
 
     closeModal('rescheduleModal');
-    toast('Booking rescheduled!');
+    toast(items.length > 1 ? 'All courts rescheduled!' : 'Booking rescheduled!');
     await renderBookings();
     renderDash();
 
-    DB.getBookingByRef(ref).then(async bk => {
+    getBookingGroupByRef(ref).then(async bk => {
       if (!bk) return;
       const payload = {
         bookingRef: bk.ref,
@@ -5743,7 +5815,11 @@ async function saveReschedule() {
       ]);
     }).catch(() => {});
   } catch(e) {
-    toast('Failed to reschedule booking.', 'err');
+    console.error('saveReschedule error:', e);
+    toast(e.message || 'Failed to reschedule booking.', 'err');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '📅 Reschedule & Notify';
   }
 }
 

@@ -6,6 +6,23 @@ Types: **Added**, **Changed**, **Fixed**, **Removed**, **Security**, **DB**
 
 ---
 
+## [2026-08-25] - Hardened Accumulated Remittances
+
+### Added
+- Dedicated owner/court-owner Remittances workspace with live accumulated balances, owner-selected due dates, exact server cutoffs, private receipt uploads, partial-payment review, cancellation recovery, and permanent history.
+- Immutable booking-fee snapshots, remittance headers/items/payments/events, audited due-date changes, RPC-only financial mutations, and a private `remittance-proofs` bucket.
+
+### Changed
+- Retired the mutable client-generated monthly statement screens. Paid legacy statements remain visible as read-only settlement history.
+- Updated the court-owner agreement to Version 13 for the owner-selected due-date and exact-cutoff workflow.
+
+### Security
+- Remittance writes now use role-checked, idempotent database transactions; proof images use restricted storage and short-lived signed URLs.
+
+**Files affected:** `admin.html`, `supabase-config.js`, `SETUP_NEW_SUPABASE.sql`, `setup-db.js`, `README_CLIENT_SETUP.md`, `supabase/migrations/20260713213000_accumulated_booking_fee_remittances.sql`, `supabase/migrations/20260713233000_remittance_late_cycle_due_fix.sql`, `supabase/migrations/20260713234500_remittance_audit_metrics.sql`, `supabase/migrations/20260730213000_owner_selectable_remittance_due_date.sql`
+
+---
+
 ## [2026-06-30] - Guest Resume, Manual Booking & Admin Mobile Polish
 
 ### Added

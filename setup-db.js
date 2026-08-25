@@ -1,7 +1,17 @@
 // Run: node setup-db.js
-// Sets up the full The Quadrant schema in the new Supabase project
+// Creates a legacy bootstrap schema for The Quadrant.
+// A production/fresh install must also apply the post-baseline migrations in
+// the order documented in README_CLIENT_SETUP.md. Raw SQL execution is not supported by PostgREST;
+// prefer SETUP_NEW_SUPABASE.sql in the Supabase SQL Editor plus migrations.
 
 const fs = require('fs');
+
+const REQUIRED_REMITTANCE_MIGRATIONS = [
+  '20260713213000_accumulated_booking_fee_remittances.sql',
+  '20260713233000_remittance_late_cycle_due_fix.sql',
+  '20260713234500_remittance_audit_metrics.sql',
+  '20260730213000_owner_selectable_remittance_due_date.sql',
+];
 
 function loadLocalEnv() {
   if (!fs.existsSync('.env.local')) return {};
@@ -290,6 +300,11 @@ async function run() {
   console.log(settErr ? `  ✗ seed settings: ${settErr.message}` : '  ✓ seed settings');
 
   console.log('\nDone!');
+  console.log('Required next step: apply the post-baseline migrations in README_CLIENT_SETUP.md order.');
+  console.log('Remittance ledger migrations:');
+  for (const migration of REQUIRED_REMITTANCE_MIGRATIONS) {
+    console.log(`  - supabase/migrations/${migration}`);
+  }
 }
 
 async function runSQL(sql, label) {

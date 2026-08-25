@@ -1,6 +1,16 @@
 -- ============================================================
 -- THE QUADRANT — COMPLETE DATABASE SETUP
 -- Run this entire script in: Supabase Dashboard → SQL Editor
+--
+-- REQUIRED FRESH-INSTALL FOLLOW-UP:
+-- After this baseline succeeds, apply the post-baseline migrations in the
+-- dependency order documented in README_CLIENT_SETUP.md. Finish with:
+--   1. 20260713213000_accumulated_booking_fee_remittances.sql
+--   2. 20260713233000_remittance_late_cycle_due_fix.sql
+--   3. 20260713234500_remittance_audit_metrics.sql
+--   4. 20260730213000_owner_selectable_remittance_due_date.sql
+-- These install immutable booking-fee snapshots, exact-cutoff batches,
+-- private proof storage, reconciled metrics, audited due dates, and RPCs.
 -- ============================================================
 
 
@@ -423,9 +433,11 @@ ON CONFLICT (key) DO NOTHING;
 
 -- ============================================================
 -- DONE! After running this:
--- 1. Go to Authentication → Providers → Email
+-- 1. Apply the post-baseline migrations described in README_CLIENT_SETUP.md,
+--    ending with the four remittance migrations listed at the top of this file.
+-- 2. Go to Authentication → Providers → Email
 --    → Disable "Confirm email" → Save
--- 2. Go to Project Settings → API
+-- 3. Go to Project Settings → API
 --    → Copy "Project URL" and "anon public" key
--- 3. Share those two values to update the app config
+-- 4. Share those two values to update the app config
 -- ============================================================

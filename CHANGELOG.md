@@ -6,6 +6,16 @@ Types: **Added**, **Changed**, **Fixed**, **Removed**, **Security**, **DB**
 
 ---
 
+## [2026-08-26] - Add Booking RLS Regression Guard
+
+### Security
+- Added an automated migration check that fails when either the anonymous customer booking policy or the authenticated dashboard booking policy is missing or replaced by a drop.
+- Added the security regression check to the full launch validation command.
+
+**Files affected:** `tools/check-booking-rls.mjs`, `package.json`
+
+---
+
 ## [2026-08-26] - Restore Dashboard Booking Creation
 
 ### Fixed

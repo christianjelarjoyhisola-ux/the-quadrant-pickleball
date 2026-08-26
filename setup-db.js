@@ -11,6 +11,7 @@ const REQUIRED_REMITTANCE_MIGRATIONS = [
   '20260713233000_remittance_late_cycle_due_fix.sql',
   '20260713234500_remittance_audit_metrics.sql',
   '20260730213000_owner_selectable_remittance_due_date.sql',
+  '20260826094500_restore_dashboard_booking_inserts.sql',
 ];
 
 function loadLocalEnv() {

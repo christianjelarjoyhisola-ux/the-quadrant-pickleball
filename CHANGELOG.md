@@ -6,6 +6,16 @@ Types: **Added**, **Changed**, **Fixed**, **Removed**, **Security**, **DB**
 
 ---
 
+## [2026-08-26] - Restore Dashboard Booking Creation
+
+### Fixed
+- Restored the authenticated `bookings` insert policy for system owners, court owners, and staff after the remittance migration narrowed public inserts to anonymous customer holds.
+- Kept dashboard inserts restricted to non-host customer bookings and prevented authenticated users from attributing a booking to another account.
+
+**Files affected:** `supabase/migrations/20260826094500_restore_dashboard_booking_inserts.sql`, `setup-db.js`, `README_CLIENT_SETUP.md`
+
+---
+
 ## [2026-08-25] - Hardened Accumulated Remittances
 
 ### Added

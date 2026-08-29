@@ -683,8 +683,14 @@ window.DB = {
   },
 
   async deleteCourt(id) {
-    const { error } = await _sb.from('courts').delete().eq('id', id);
-    if (error) console.error('deleteCourt:', error);
+    const { data, error } = await _sb.from('courts').delete().eq('id', id).select('id');
+    if (error) {
+      console.error('deleteCourt:', error);
+      throw error;
+    }
+    if (!data?.length) {
+      throw new Error('Court was not deleted. Your account may not have permission.');
+    }
     _pbClearFastCache(['courts']);
   },
 
@@ -1288,16 +1294,9 @@ window.DB = {
     return data.url;
   },
 
-  // ---- SEED DEFAULT DATA (runs once on first load) ----
-  async seedDefaultData() {
-    const courts = await this.getCourts();
-    if (courts.length === 0) {
-      await _sb.from('courts').insert([
-        { id: 'c1', name: 'Court Alpha', description: 'Outdoor · Air passing through · Standard Flooring', rate: 350, blocked: false, feats: ['Outdoor','Open Air','Standard Floor'], photo: null },
-        { id: 'c2', name: 'Court Beta',  description: 'Outdoor · Air passing through · Standard Flooring', rate: 280, blocked: false, feats: ['Outdoor','Open Air','Standard Floor'], photo: null },
-      ]);
-    }
-  },
+  // Production data is provisioned only by database setup/migrations.
+  // Never recreate courts at runtime after an operator intentionally deletes them.
+  async seedDefaultData() {},
 
   // Check if user has accepted the current agreement version
   async getAgreement(userId, version = 1) {

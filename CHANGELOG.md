@@ -6,6 +6,17 @@ Types: **Added**, **Changed**, **Fixed**, **Removed**, **Security**, **DB**
 
 ---
 
+## [2026-08-29] - Stop Deleted Courts from Reappearing
+
+### Fixed
+- Removed production page-load seeding that recreated Court Alpha and Court Beta whenever the courts table became empty.
+- Court deletion now confirms that Supabase actually deleted a row and displays permission/database failures instead of a false success message.
+- Added a regression check preventing runtime court recreation from returning.
+
+**Files affected:** `index.html`, `admin.html`, `supabase-config.js`, `tools/check-court-lifecycle.mjs`, `package.json`
+
+---
+
 ## [2026-08-26] - Add Booking RLS Regression Guard
 
 ### Security

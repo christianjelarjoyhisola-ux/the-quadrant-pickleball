@@ -8339,7 +8339,6 @@ async function handlePaymentReturn() {
 
 document.addEventListener('DOMContentLoaded', async () => {
   initDark();
-  await DB.seedDefaultData();
   await loadOperatingHours();
   await expireStalePaymentHolds();
   await renderCourts();

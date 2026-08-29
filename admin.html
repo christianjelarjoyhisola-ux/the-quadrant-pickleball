@@ -6196,9 +6196,14 @@ async function toggleBlock(id){
 
 async function delCourt(id){
   if(!confirm('Delete this court?'))return;
-  await DB.deleteCourt(id);
-  await renderCourts();
-  toast('Court deleted.','inf');
+  try {
+    await DB.deleteCourt(id);
+    await renderCourts();
+    toast('Court deleted.','inf');
+  } catch (error) {
+    console.error('delCourt:', error);
+    toast(error?.message || 'Court could not be deleted.','err');
+  }
 }
 
 /* ==============================================

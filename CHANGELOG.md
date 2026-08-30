@@ -11,6 +11,7 @@ Types: **Added**, **Changed**, **Fixed**, **Removed**, **Security**, **DB**
 ### Changed
 - Added a no-cancellation/no-refund rule for confirmed bookings while retaining one-time rescheduling as the only permitted change.
 - Added a maximum of 8 players per court, with clear emoji labels for both new rules.
+- Added matching, meaningful emoji labels to all six booking and court rules for faster scanning.
 - Updated the acknowledgement to cover all six rules and enabled mobile scrolling for the longer agreement.
 
 **Files affected:** `index.html`

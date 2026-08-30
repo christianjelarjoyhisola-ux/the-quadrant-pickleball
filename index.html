@@ -953,7 +953,7 @@ body.dark .shared-date-display {
   .booking-rules-modal .bk-modal-hd { padding:9px 12px; }
   .booking-rules-modal .bk-modal-court { font-size:1.2rem; line-height:1; }
   .booking-rules-modal .bk-modal-meta { margin-top:2px; font-size:.68rem; }
-  .booking-rules-modal .bk-modal-body { padding:9px 12px; overflow:hidden; }
+  .booking-rules-modal .bk-modal-body { padding:9px 12px; overflow-y:auto; }
   .booking-rules-intro { margin-bottom:7px; font-size:.69rem; line-height:1.3; }
   .booking-rules-list { gap:5px; }
   .booking-rule { grid-template-columns:25px minmax(0,1fr); gap:8px; padding:6px 8px; border-radius:8px; }
@@ -2985,7 +2985,7 @@ body.light #splashScreen { background: #071320; }
       </div>
     </div>
     <div class="bk-modal-body">
-      <p class="booking-rules-intro" id="bookingRulesIntro">Please take a moment to read all four rules. They help every booking start safely and on time.</p>
+      <p class="booking-rules-intro" id="bookingRulesIntro">Please take a moment to read all six rules. They help every booking start safely and on time.</p>
       <ol class="booking-rules-list">
         <li class="booking-rule">
           <span class="booking-rule-num">1</span>
@@ -3001,12 +3001,20 @@ body.light #splashScreen { background: #071320; }
         </li>
         <li class="booking-rule">
           <span class="booking-rule-num">4</span>
+          <span><strong>🚫 No cancellations after confirmation</strong>Once a booking is confirmed, it is final and cannot be cancelled or refunded. The one-time rescheduling rule above is the only permitted change.</span>
+        </li>
+        <li class="booking-rule">
+          <span class="booking-rule-num">5</span>
+          <span><strong>👥 Maximum 8 players per court</strong>A court booking allows no more than 8 players. Additional players require another court booking.</span>
+        </li>
+        <li class="booking-rule">
+          <span class="booking-rule-num">6</span>
           <span><strong>Proper footwear only</strong>Wear clean, non-marking athletic court shoes. Sandals, boots, and bare feet are not permitted.</span>
         </li>
       </ol>
       <label class="booking-rules-agree">
         <input type="checkbox" id="bookingRulesAgree" onchange="updateBookingRulesContinue()" />
-        <span>I have read and understand all four Booking &amp; Court Rules.</span>
+        <span>I have read and understand all six Booking &amp; Court Rules.</span>
       </label>
     </div>
     <div class="bk-modal-ft">

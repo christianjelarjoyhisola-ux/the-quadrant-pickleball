@@ -6,6 +6,17 @@ Types: **Added**, **Changed**, **Fixed**, **Removed**, **Security**, **DB**
 
 ---
 
+## [2026-08-30] - Add Confirmed Booking and Player-Limit Rules
+
+### Changed
+- Added a no-cancellation/no-refund rule for confirmed bookings while retaining one-time rescheduling as the only permitted change.
+- Added a maximum of 8 players per court, with clear emoji labels for both new rules.
+- Updated the acknowledgement to cover all six rules and enabled mobile scrolling for the longer agreement.
+
+**Files affected:** `index.html`
+
+---
+
 ## [2026-08-29] - Stop Deleted Courts from Reappearing
 
 ### Fixed

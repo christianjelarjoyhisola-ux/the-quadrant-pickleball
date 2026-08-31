@@ -3005,7 +3005,7 @@ body.light #splashScreen { background: #071320; }
         </li>
         <li class="booking-rule">
           <span class="booking-rule-num">5</span>
-          <span><strong>👥 Maximum 8 players per court</strong>A court booking allows no more than 8 players. Additional players require another court booking.</span>
+          <span><strong>👥 8 players included per court</strong>Starting with the 9th player, an additional ₱100 per player applies to that court booking.</span>
         </li>
         <li class="booking-rule">
           <span class="booking-rule-num">6</span>
@@ -3087,6 +3087,10 @@ body.light #splashScreen { background: #071320; }
             <span> Select Payment Method</span>
             <span class="bpay-title-amount"><span>Amount to pay</span><strong id="bStepPayAmtMethod">--</strong></span>
           </div>
+          <div class="wiz-summary" style="margin-bottom:12px">
+            <div class="wiz-summary-lbl">Price Summary</div>
+            <div id="bookingPriceSummary" style="font-size:.84rem;line-height:1.55"></div>
+          </div>
           <div class="fg bpay-method-block" id="payMethodBlock">
             <div class="pay-opts pay-opts-4 bpay-methods">
               <div class="pay-opt" id="payOptGcash" data-m="gcash" onclick="pickPay('gcash')">
@@ -3143,6 +3147,7 @@ body.light #splashScreen { background: #071320; }
             <label class="fl" for="bEmail">Email Address</label>
             <input type="email" class="fi" id="bEmail" placeholder="youremail@gmail.com" autocomplete="off" />
           </div>
+          <div id="bookingPlayerFields"></div>
           <div class="wiz-summary">
             <div class="wiz-summary-lbl">Booking Summary</div>
             <div id="wiz3Summary" style="font-size:.84rem;line-height:1.55"></div>
@@ -3357,7 +3362,7 @@ body.light #splashScreen { background: #071320; }
           </div>
 
           <div class="down-note" id="downNote" style="margin-top:10px">
-            The required payment includes <strong>50% of the court fee plus the full booking fee</strong>. Follow the payment instructions above.
+            The required payment includes <strong>50% of the court fee plus the full booking fee and full extra-player fee</strong>. Follow the payment instructions above.
           </div>
         </div>
 
@@ -3454,6 +3459,8 @@ body.light #splashScreen { background: #071320; }
       <div class="i-row"><span class="lb"> Date</span><span class="vl" id="iDate">—</span></div>
       <div class="i-row"><span class="lb"> Time</span><span class="vl" id="iTime">—</span></div>
       <div class="i-row"><span class="lb"> Duration</span><span class="vl" id="iDur">—</span></div>
+      <div class="i-row"><span class="lb"> Players</span><span class="vl" id="iPlayers">—</span></div>
+      <div class="i-row" id="iExtraPlayersRow" style="display:none"><span class="lb"> Extra-player Fee</span><span class="vl" id="iExtraPlayers">₱0.00</span></div>
       <div class="i-row"><span class="lb"> Payment</span><span class="vl" id="iPay">—</span></div>
       <div id="iGcashRefRow" class="i-row" style="display:none"><span class="lb"> GCash Ref #</span><span class="vl" id="iGcashRef">—</span></div>
     </div>
@@ -4118,6 +4125,10 @@ let bookingItems = [];
 let sharedCourtDate = '';
 let sharedDatePickerYear = 0;
 let sharedDatePickerMonth = 0;
+const INCLUDED_PLAYERS_PER_COURT = 8;
+const EXTRA_PLAYER_RATE = 100;
+const MAX_PLAYER_COUNT_PER_COURT = 99;
+let bookingPlayerCounts = new Map();
 
 function normalizedCourtBrowseDate(date) {
   const today = todayStr();
@@ -4274,6 +4285,51 @@ function selectionServiceFee(sel) {
   return calcSvcFee((sel?.slots || []).length);
 }
 
+function normalizedPlayerCount(value) {
+  if (value === '' || value === null || value === undefined) return null;
+  const count = Number(value);
+  return Number.isInteger(count) && count >= 1 && count <= MAX_PLAYER_COUNT_PER_COURT ? count : null;
+}
+
+function bookingPlayerKey(item) {
+  return String(item?.ref || bookingSelectionKey(item));
+}
+
+function playerCountForItem(item) {
+  const direct = normalizedPlayerCount(item?.playerCount ?? item?.player_count);
+  if (direct !== null) return direct;
+  return normalizedPlayerCount(bookingPlayerCounts.get(bookingPlayerKey(item)));
+}
+
+function extraPlayerCountForItem(item) {
+  const count = playerCountForItem(item);
+  return count === null ? 0 : Math.max(0, count - INCLUDED_PLAYERS_PER_COURT);
+}
+
+function extraPlayerFeeForItem(item) {
+  const stored = Number(item?.extraPlayerFee ?? item?.extra_player_fee);
+  if (item?.playerQuoteConfirmed && Number.isFinite(stored) && stored >= 0) return stored;
+  return extraPlayerCountForItem(item) * EXTRA_PLAYER_RATE;
+}
+
+function setBookingItemPlayerCount(item, value, { invalidateQuote = true } = {}) {
+  const count = normalizedPlayerCount(value);
+  const key = bookingPlayerKey(item);
+  if (count === null) bookingPlayerCounts.delete(key);
+  else bookingPlayerCounts.set(key, count);
+  item.playerCount = count;
+  item.includedPlayers = INCLUDED_PLAYERS_PER_COURT;
+  item.extraPlayerRate = EXTRA_PLAYER_RATE;
+  item.extraPlayerCount = count === null ? 0 : Math.max(0, count - INCLUDED_PLAYERS_PER_COURT);
+  item.extraPlayerFee = item.extraPlayerCount * EXTRA_PLAYER_RATE;
+  if (invalidateQuote) {
+    item.playerQuoteConfirmed = false;
+    item.playerQuoteCount = null;
+    item.total = Number(item.courtFee || 0) + Number(item.serviceFee || 0) + item.extraPlayerFee;
+  }
+  return count;
+}
+
 function selectionTotal(sel) {
   return selectionCourtFee(sel) + selectionServiceFee(sel);
 }
@@ -4335,6 +4391,12 @@ function makeBookingItemFromSelection(sel, ref = null, groupRef = null) {
     rate: Number(sel.rate || 0),
     courtFee,
     serviceFee,
+    playerCount: null,
+    includedPlayers: INCLUDED_PLAYERS_PER_COURT,
+    extraPlayerCount: 0,
+    extraPlayerRate: EXTRA_PLAYER_RATE,
+    extraPlayerFee: 0,
+    playerQuoteConfirmed: false,
     total: courtFee + serviceFee,
   };
 }
@@ -4386,8 +4448,25 @@ function bookingItemsServiceFee(items = activeBookingItems()) {
   return items.reduce((sum, item) => sum + Number(item.serviceFee || 0), 0);
 }
 
+function bookingItemTotal(item) {
+  const count = playerCountForItem(item);
+  const quotedTotal = Number(item?.total);
+  if (item?.playerQuoteConfirmed && item.playerQuoteCount === count && Number.isFinite(quotedTotal)) return quotedTotal;
+  return Number(item?.courtFee || 0) + Number(item?.serviceFee || 0) + extraPlayerFeeForItem(item);
+}
+
+function bookingItemsExtraPlayerFee(items = activeBookingItems()) {
+  return items.reduce((sum, item) => sum + extraPlayerFeeForItem(item), 0);
+}
+
 function bookingItemsTotal(items = activeBookingItems()) {
-  return bookingItemsCourtFee(items) + bookingItemsServiceFee(items);
+  if (items.length && items.every(item => item.playerQuoteConfirmed && item.playerQuoteCount === playerCountForItem(item))) {
+    return items.reduce((sum, item) => sum + bookingItemTotal(item), 0);
+  }
+  if (_serviceFeeType === 'flat') {
+    return bookingItemsCourtFee(items) + bookingItemsServiceFee(items) + bookingItemsExtraPlayerFee(items);
+  }
+  return items.reduce((sum, item) => sum + bookingItemTotal(item), 0);
 }
 
 function roundBookingMoney(value) {
@@ -4395,7 +4474,7 @@ function roundBookingMoney(value) {
 }
 
 function bookingItemsRequiredPayment(items = activeBookingItems()) {
-  return roundBookingMoney((bookingItemsCourtFee(items) / 2) + bookingItemsServiceFee(items));
+  return roundBookingMoney((bookingItemsCourtFee(items) / 2) + bookingItemsServiceFee(items) + bookingItemsExtraPlayerFee(items));
 }
 
 function bookingItemsDuration(items = activeBookingItems()) {
@@ -4441,6 +4520,7 @@ function bookingItemsRateLabel(items = activeBookingItems()) {
 function bookingItemsSummaryHtml(items = uniqueBookingSelections(activeBookingItems())) {
   const total = bookingItemsTotal(items);
   const svcFee = bookingItemsServiceFee(items);
+  const extraPlayerFee = bookingItemsExtraPlayerFee(items);
   const hrs = bookingItemsDuration(items);
   const dates = [...new Set(items.map(item => item.date).filter(Boolean))];
   const dateStr = dates.length > 1 ? dates.map(fmtD).join(' + ') : bookingItemsDate(items) ? fmtD(bookingItemsDate(items)) : '-';
@@ -4452,11 +4532,104 @@ function bookingItemsSummaryHtml(items = uniqueBookingSelections(activeBookingIt
     const separateNote = slotsAreConsecutive(item.slots) ? '' : ` <span style="color:var(--warn);font-weight:700">(separate hours)</span>`;
     const datePart = dates.length > 1 ? ` (${fmtDc(item.date)})` : '';
     rows.push(`Time: ${item.courtName}${datePart}: ${item.timeLabel || itemTimeLabel(item)} &nbsp;(${item.duration} hr${item.duration !== 1 ? 's' : ''})${separateNote}`);
+    const playerCount = playerCountForItem(item);
+    if (playerCount !== null) {
+      const extraCount = extraPlayerCountForItem(item);
+      rows.push(`Players: ${item.courtName}: <strong>${playerCount}</strong>${extraCount ? ` (${extraCount} extra × ${fmt(EXTRA_PLAYER_RATE)})` : ' (up to 8 included)'}`);
+    }
   });
   rows.push(`Court Fee: <strong style="color:var(--muted)">${fmt(bookingItemsCourtFee(items))}</strong>`);
   if (svcFee > 0) rows.push(`Booking Fee: <strong style="color:var(--muted)">${bookingFeeDisplay(svcFee, hrs)}</strong>`);
+  if (extraPlayerFee > 0) rows.push(`Extra-player Fee: <strong style="color:var(--muted)">${fmt(extraPlayerFee)}</strong>`);
   rows.push(`Total: <strong style="color:var(--accent)">${fmt(total)}</strong>`);
+  rows.push(`${payFull ? 'Full Payment' : 'Required Payment'}: <strong style="color:var(--accent)">${fmt(payFull ? total : bookingItemsRequiredPayment(items))}</strong>`);
   return rows.filter(Boolean).map(s => `<div>${s}</div>`).join('');
+}
+
+function renderBookingPlayerFields(items = uniqueBookingSelections(activeBookingItems())) {
+  const wrap = $('bookingPlayerFields');
+  if (!wrap) return;
+  wrap.innerHTML = items.map((item, index) => {
+    const count = playerCountForItem(item);
+    const extraCount = extraPlayerCountForItem(item);
+    const extraFee = extraPlayerFeeForItem(item);
+    const quoteLocked = item.playerQuoteConfirmed && item.playerQuoteCount === count;
+    const label = items.length > 1 ? `${item.courtName} — Number of Players` : 'Number of Players';
+    const feeNote = count === null
+      ? `Up to ${INCLUDED_PLAYERS_PER_COURT} included; ${fmt(EXTRA_PLAYER_RATE)} per player starting with the 9th.`
+      : extraCount > 0
+        ? `${extraCount} extra player${extraCount !== 1 ? 's' : ''}: ${fmt(extraFee)} added in full.`
+        : `${count} player${count !== 1 ? 's' : ''}; no extra-player fee.`;
+    const confirmedNote = quoteLocked ? ' Player count confirmed for this reservation.' : '';
+    return `<div class="fg" style="margin-bottom:10px">
+      <label class="fl" for="bPlayerCount_${index}">${esc(label)}</label>
+      <input type="number" class="fi" id="bPlayerCount_${index}" min="1" max="${MAX_PLAYER_COUNT_PER_COURT}" step="1" inputmode="numeric" required value="${count ?? ''}" placeholder="Enter player count" ${quoteLocked ? 'readonly aria-readonly="true"' : ''} oninput="updateBookingItemPlayerCount(${index}, this.value)" />
+      <div id="bPlayerFeeNote_${index}" style="font-size:.72rem;color:${extraCount > 0 ? 'var(--accent)' : 'var(--muted)'};margin-top:4px">${feeNote}${confirmedNote}</div>
+    </div>`;
+  }).join('');
+}
+
+function updateBookingItemPlayerCount(index, value) {
+  const items = uniqueBookingSelections(activeBookingItems());
+  const item = items[index];
+  if (!item) return;
+  setBookingItemPlayerCount(item, value);
+  clearBookingInvalid(`bPlayerCount_${index}`);
+  const count = playerCountForItem(item);
+  const extraCount = extraPlayerCountForItem(item);
+  const feeNote = $(`bPlayerFeeNote_${index}`);
+  if (feeNote) {
+    feeNote.style.color = extraCount > 0 ? 'var(--accent)' : 'var(--muted)';
+    feeNote.textContent = count === null
+      ? `Up to ${INCLUDED_PLAYERS_PER_COURT} included; ${fmt(EXTRA_PLAYER_RATE)} per player starting with the 9th.`
+      : extraCount > 0
+        ? `${extraCount} extra player${extraCount !== 1 ? 's' : ''}: ${fmt(extraPlayerFeeForItem(item))} added in full.`
+        : `${count} player${count !== 1 ? 's' : ''}; no extra-player fee.`;
+  }
+  updateWiz3Summary();
+  updatePrice();
+  saveGuestBookingResume();
+}
+
+async function quoteBookingPlayersBeforePayment(items = uniqueBookingSelections(activeBookingItems())) {
+  if (typeof DB.quoteBookingPlayerCount !== 'function') throw new Error('Player pricing is temporarily unavailable. Please try again.');
+  const quotedItems = await Promise.all(items.map(async (item, index) => {
+    const count = playerCountForItem(item);
+    if (!item.ref || count === null) throw new Error(`Enter a valid player count for ${item.courtName}.`);
+    let result;
+    try {
+      result = await DB.quoteBookingPlayerCount(item.ref, count);
+    } catch (err) {
+      if (err && typeof err === 'object') err.playerIndex = index;
+      throw err;
+    }
+    if (Array.isArray(result)) result = result[0];
+    let quote = result?.booking || result?.data || result;
+    if (Array.isArray(quote)) quote = quote[0];
+    const total = Number(quote?.total);
+    const extraPlayerFee = Number(quote?.extraPlayerFee ?? quote?.extra_player_fee);
+    if (!quote || !Number.isFinite(total) || total < 0 || !Number.isFinite(extraPlayerFee) || extraPlayerFee < 0) {
+      throw new Error(`Could not confirm player pricing for ${item.courtName}. Please try again.`);
+    }
+    const quotedCount = normalizedPlayerCount(quote.playerCount ?? quote.player_count ?? count);
+    if (quotedCount !== count) throw new Error(`Player pricing changed for ${item.courtName}. Please review the player count and try again.`);
+    const expectedExtraFee = Math.max(0, count - INCLUDED_PLAYERS_PER_COURT) * EXTRA_PLAYER_RATE;
+    if (extraPlayerFee !== expectedExtraFee) throw new Error(`Could not confirm the extra-player fee for ${item.courtName}. Please try again.`);
+    item.playerCount = count;
+    item.includedPlayers = Number(quote.includedPlayers ?? quote.included_players ?? INCLUDED_PLAYERS_PER_COURT);
+    item.extraPlayerCount = Number(quote.extraPlayerCount ?? quote.extra_player_count ?? Math.max(0, count - INCLUDED_PLAYERS_PER_COURT));
+    item.extraPlayerRate = Number(quote.extraPlayerRate ?? quote.extra_player_rate ?? EXTRA_PLAYER_RATE);
+    item.extraPlayerFee = extraPlayerFee;
+    item.total = total;
+    item.playerQuoteCount = count;
+    item.playerQuoteConfirmed = true;
+    return item;
+  }));
+  bookingItems = quotedItems;
+  saveGuestBookingResume();
+  updateWiz3Summary();
+  updatePrice();
+  return quotedItems;
 }
 
 async function refreshBookingItemViews(items = activeBookingItems()) {
@@ -5287,6 +5460,11 @@ async function saveBookingRowFromHold(row, heldRefs = new Set()) {
       gcashRef:      row.gcashRef,
       downpayment:   row.downpayment,
       total:         row.total,
+      playerCount:   row.playerCount,
+      includedPlayers: row.includedPlayers,
+      extraPlayerCount: row.extraPlayerCount,
+      extraPlayerRate: row.extraPlayerRate,
+      extraPlayerFee: row.extraPlayerFee,
       paymentStatus: row.paymentStatus,
       status:        row.status,
       createdAt:     row.createdAt,
@@ -5689,6 +5867,7 @@ function clearReservationState() {
   _reservedRef = null;
   _reservedRefs = [];
   _reservationStartedAt = null;
+  bookingPlayerCounts.clear();
   clearGuestBookingResume();
 }
 
@@ -5708,6 +5887,11 @@ function guestResumeFormDraft() {
     gcashRef: $('bGcashRef')?.value || '',
     payFull: !!payFull,
     policyAgreed: !!$('bookingPolicyAgree')?.checked,
+    playerCounts: uniqueBookingSelections(activeBookingItems()).map(item => ({
+      key: bookingPlayerKey(item),
+      ref: item.ref || null,
+      playerCount: playerCountForItem(item),
+    })),
   };
 }
 
@@ -5747,6 +5931,9 @@ function bookingItemFromReservedBooking(b) {
   const duration = Number(b.duration || slots.length || 0);
   const serviceFee = calcSvcFee(duration);
   const total = Number(b.total || 0);
+  const playerCount = normalizedPlayerCount(b.playerCount ?? b.player_count);
+  const extraPlayerFee = Number(b.extraPlayerFee ?? b.extra_player_fee ?? 0);
+  const hasPlayerQuote = playerCount !== null && Number.isFinite(extraPlayerFee) && extraPlayerFee >= 0;
   return {
     ref: b.ref,
     groupRef: b.groupRef || null,
@@ -5759,8 +5946,15 @@ function bookingItemFromReservedBooking(b) {
     timeLabel: b.timeLabel || slotsTimeLabel(slots),
     duration,
     rate: Number(b.rate || 0),
-    courtFee: Math.max(0, total - serviceFee),
+    courtFee: Math.max(0, total - serviceFee - (hasPlayerQuote ? extraPlayerFee : 0)),
     serviceFee,
+    playerCount,
+    includedPlayers: Number(b.includedPlayers ?? b.included_players ?? INCLUDED_PLAYERS_PER_COURT),
+    extraPlayerCount: Number(b.extraPlayerCount ?? b.extra_player_count ?? (playerCount === null ? 0 : Math.max(0, playerCount - INCLUDED_PLAYERS_PER_COURT))),
+    extraPlayerRate: Number(b.extraPlayerRate ?? b.extra_player_rate ?? EXTRA_PLAYER_RATE),
+    extraPlayerFee: hasPlayerQuote ? extraPlayerFee : 0,
+    playerQuoteCount: hasPlayerQuote ? playerCount : null,
+    playerQuoteConfirmed: hasPlayerQuote,
     total,
   };
 }
@@ -5770,6 +5964,18 @@ function restoreGuestResumeDraft(form = {}) {
   if ($('bPhone')) $('bPhone').value = form.phone || '';
   if ($('bEmail')) $('bEmail').value = form.email || '';
   if ($('bookingPolicyAgree')) $('bookingPolicyAgree').checked = !!form.policyAgreed;
+  const savedCounts = Array.isArray(form.playerCounts) ? form.playerCounts : [];
+  uniqueBookingSelections(activeBookingItems()).forEach(item => {
+    const saved = savedCounts.find(entry =>
+      (entry?.ref && String(entry.ref) === String(item.ref)) || entry?.key === bookingPlayerKey(item)
+    );
+    if (!saved) return;
+    const count = normalizedPlayerCount(saved.playerCount);
+    if (count !== null && playerCountForItem(item) !== count) setBookingItemPlayerCount(item, count);
+    else if (count !== null) bookingPlayerCounts.set(bookingPlayerKey(item), count);
+  });
+  renderBookingPlayerFields();
+  updateWiz3Summary();
   if (form.payMethod && paymentMethods[form.payMethod]) pickPay(form.payMethod);
   if ($('bGcashRef')) {
     $('bGcashRef').value = normalizePaymentRef(form.gcashRef || '', $('bPay')?.value || form.payMethod || 'gcash');
@@ -5854,6 +6060,7 @@ function clearSelectedBookingUi() {
   cardSel = emptyCardSelection();
   selSlots = [];
   bookingItems = [];
+  bookingPlayerCounts.clear();
   document.querySelectorAll('.cc-book-bar').forEach(b => b.style.display = 'none');
   document.querySelectorAll('.cc-slot-btn.selected').forEach(b => b.classList.remove('selected'));
   const mobileBar = $('mobileBookBar');
@@ -6401,7 +6608,10 @@ function wizGoTo(n) {
   $('wizBackBtn').textContent = n <= wizStartStep ? '✕ Cancel' : '← Back';
   $('wizNextBtn').textContent = n === 5 ? (isPayMongoCheckoutAvailable() ? 'Show QRPh Code' : 'Confirm Booking') : 'Next ->';
   if (n === 2) { renderSlots(); }
-  if (n === 3) { updateWiz3Summary(); }
+  if (n === 3) {
+    renderBookingPlayerFields();
+    updateWiz3Summary();
+  }
   if (n === 4) {
     updatePrice();
     preparePaymentStep();
@@ -6415,7 +6625,7 @@ function wizGoTo(n) {
   saveGuestBookingResume();
 }
 
-function wizNext() {
+async function wizNext() {
   if (wizStep === 1) {
     if (!court) { bookingValidationError('Please select a court.', 'courtDisp', 1); return; }
     wizGoTo(2);
@@ -6432,7 +6642,28 @@ function wizNext() {
     if (!phone) { bookingValidationError('Please enter your contact number.', 'bPhone', 3); return; }
     if (!/^(09|\+639)\d{9}$/.test(phone.replace(/\s|-/g,''))) { bookingValidationError('Enter a valid PH number (e.g. 09XX XXX XXXX).', 'bPhone', 3); return; }
     if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { bookingValidationError('Please enter a valid email address.', 'bEmail', 3); return; }
-    wizGoTo(4);
+    const items = uniqueBookingSelections(activeBookingItems());
+    const invalidPlayerIndex = items.findIndex(item => playerCountForItem(item) === null);
+    if (invalidPlayerIndex >= 0) {
+      bookingValidationError(`Enter a whole-number player count from 1 to ${MAX_PLAYER_COUNT_PER_COURT} for ${items[invalidPlayerIndex].courtName}.`, `bPlayerCount_${invalidPlayerIndex}`, 3);
+      return;
+    }
+    const nextBtn = $('wizNextBtn');
+    if (nextBtn) {
+      nextBtn.disabled = true;
+      nextBtn.textContent = 'Updating total...';
+    }
+    try {
+      await quoteBookingPlayersBeforePayment(items);
+      wizGoTo(4);
+    } catch (err) {
+      bookingValidationError(extractErrMsg(err), `bPlayerCount_${Math.max(0, Number(err?.playerIndex || 0))}`, 3);
+    } finally {
+      if (nextBtn) {
+        nextBtn.disabled = false;
+        nextBtn.textContent = wizStep === 5 ? (isPayMongoCheckoutAvailable() ? 'Show QRPh Code' : 'Confirm Booking') : 'Next ->';
+      }
+    }
   } else if (wizStep === 4) {
     const payMethod = $('bPay')?.value || '';
     if (!ALL_PAYMENT_METHODS.some(m => paymentMethods[m])) { bookingValidationError('No payment method is enabled right now. Please contact admin.', 'payMethodBlock', 4); return; }
@@ -7047,7 +7278,7 @@ function updatePriceLegacy() {
     $('downNote').style.display = payFull ? 'none' : '';
     $('downNote').innerHTML = payFull
       ? ''
-      : `The required payment is <strong>50% of the court fee plus the full booking fee</strong>. ${paymentInstructionText()}`;
+      : `The required payment is <strong>50% of the court fee plus the full booking fee and full extra-player fee</strong>. ${paymentInstructionText()}`;
   }
 }
 
@@ -7059,6 +7290,8 @@ function updatePrice() {
   const total = bookingItemsTotal(items);
   const requiredPayment = bookingItemsRequiredPayment(items);
   const payAmt = payFull ? total : requiredPayment;
+
+  if ($('bookingPriceSummary')) $('bookingPriceSummary').innerHTML = bookingItemsSummaryHtml(items);
 
   if ($('pHrs')) $('pHrs').textContent  = `${hrs} hr${hrs !== 1 ? 's' : ''}`;
   if ($('pRate')) $('pRate').textContent = bookingItemsRateLabel(items);
@@ -7086,7 +7319,7 @@ function updatePrice() {
     $('downNote').style.display = payFull ? 'none' : '';
     $('downNote').innerHTML = payFull
       ? ''
-      : `The required payment is <strong>50% of the court fee plus the full booking fee</strong>. ${paymentInstructionText()}`;
+      : `The required payment is <strong>50% of the court fee plus the full booking fee and full extra-player fee</strong>. ${paymentInstructionText()}`;
   }
 }
 
@@ -7372,6 +7605,8 @@ async function submitBookingLegacy(e) {
   const hasPaymentMethod = ALL_PAYMENT_METHODS.some(m => paymentMethods[m]);
   const digitalPay = isDigitalPayMethod(payMethod);
   const gcashNeedsCheckout = false; // Manual QR flow: customer pays via QR and enters ref number
+  const legacyItem = uniqueBookingSelections(activeBookingItems())[0] || null;
+  const legacyPlayerCount = playerCountForItem(legacyItem);
   const checks = [
     [!court, 'Please select a court.', 'courtDisp', 1],
     [!$('bDate').value, 'Please select a date.', 'bDate', 2],
@@ -7382,6 +7617,8 @@ async function submitBookingLegacy(e) {
     [!/^(09|\+639)\d{9}$/.test($('bPhone').value.replace(/\s|-/g,'')), 'Enter a valid PH number (e.g. 09XX XXX XXXX).', 'bPhone', 3],
     [!$('bEmail').value.trim(), 'Please enter your email.', 'bEmail', 3],
     [!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test($('bEmail').value), 'Please enter a valid email address.', 'bEmail', 3],
+    [legacyPlayerCount === null, `Please enter a whole-number player count from 1 to ${MAX_PLAYER_COUNT_PER_COURT}.`, 'bPlayerCount_0', 3],
+    [legacyItem && (!legacyItem.playerQuoteConfirmed || legacyItem.playerQuoteCount !== legacyPlayerCount), 'Please review the player count so we can confirm the total.', 'bPlayerCount_0', 3],
     [!hasPaymentMethod, 'No payment method is enabled right now. Please contact admin.', 'payMethodBlock', 4],
     [!payMethod, 'Please select a payment method.', 'payMethodBlock', 4],
     [!!payMethod && !paymentMethods[payMethod], 'Selected payment method is no longer available.', 'payMethodBlock', 4],
@@ -7415,8 +7652,9 @@ async function submitBookingLegacy(e) {
   const endH = Math.max(...selSlots) + 1;
   const courtTotal = selSlots.reduce((s, h) => s + getRateForHour(h), 0);
   const serviceFee = calcSvcFee(selSlots.length);
-  const total = courtTotal + serviceFee;
-  const downpayment = payFull ? total : roundBookingMoney((courtTotal / 2) + serviceFee);
+  const extraPlayerFee = extraPlayerFeeForItem(legacyItem);
+  const total = bookingItemTotal(legacyItem);
+  const downpayment = payFull ? total : roundBookingMoney((courtTotal / 2) + serviceFee + extraPlayerFee);
 
   // Use the already-reserved ref from proceedToBook so no new INSERT is needed.
   const bookingRef = _reservedRef || genRef();
@@ -7435,6 +7673,11 @@ async function submitBookingLegacy(e) {
     duration: hrs,
     rate: court.rate,
     total,
+    playerCount: legacyPlayerCount,
+    includedPlayers: Number(legacyItem.includedPlayers || INCLUDED_PLAYERS_PER_COURT),
+    extraPlayerCount: extraPlayerCountForItem(legacyItem),
+    extraPlayerRate: Number(legacyItem.extraPlayerRate || EXTRA_PLAYER_RATE),
+    extraPlayerFee,
     paymentMethod: payMethod,
     gcashRef: gcashRef || null,
     paymentFlow: payMethod,
@@ -7570,6 +7813,8 @@ async function submitBooking(e) {
   const digitalPay = isDigitalPayMethod(payMethod);
   const gcashNeedsCheckout = payMethod === 'gcash' && isPayMongoCheckoutAvailable();
   const repairItem = items.find(item => getCourtRepair(item.courtName, item.date));
+  const invalidPlayerIndex = items.findIndex(item => playerCountForItem(item) === null);
+  const unquotedPlayerIndex = items.findIndex(item => !item.playerQuoteConfirmed || item.playerQuoteCount !== playerCountForItem(item));
 
   const checks = [
     [items.length === 0, 'Please select at least one time slot.', 'slotsGrid', 2],
@@ -7581,6 +7826,8 @@ async function submitBooking(e) {
     [!/^(09|\+639)\d{9}$/.test($('bPhone').value.replace(/\s|-/g,'')), 'Enter a valid PH number (e.g. 09XX XXX XXXX).', 'bPhone', 3],
     [!$('bEmail').value.trim(), 'Please enter your email.', 'bEmail', 3],
     [!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test($('bEmail').value), 'Please enter a valid email address.', 'bEmail', 3],
+    [invalidPlayerIndex >= 0, `Please enter a whole-number player count from 1 to ${MAX_PLAYER_COUNT_PER_COURT} for every court.`, `bPlayerCount_${Math.max(0, invalidPlayerIndex)}`, 3],
+    [unquotedPlayerIndex >= 0, 'Please review the player count so we can confirm the total.', `bPlayerCount_${Math.max(0, unquotedPlayerIndex)}`, 3],
     [!hasPaymentMethod, 'No payment method is enabled right now. Please contact admin.', 'payMethodBlock', 4],
     [!payMethod, 'Please select a payment method.', 'payMethodBlock', 4],
     [!!payMethod && !paymentMethods[payMethod], 'Selected payment method is no longer available.', 'payMethodBlock', 4],
@@ -7616,12 +7863,13 @@ async function submitBooking(e) {
   const paymentStatus = gcashNeedsCheckout ? 'pending' : (payMethod === 'cash' ? 'unpaid' : 'for_verification');
 
   const itemBookings = items.map((item, itemIndex) => {
-    // A flat booking fee belongs to the transaction, not every child court row.
-    const itemServiceFee = _serviceFeeType === 'flat'
-      ? (itemIndex === 0 ? _serviceFeeRate : 0)
-      : Number(item.serviceFee || 0);
     const itemCourtFee = Number(item.courtFee || 0);
-    const itemTotal = itemCourtFee + itemServiceFee;
+    const itemExtraPlayerFee = extraPlayerFeeForItem(item);
+    const itemTotal = bookingItemTotal(item);
+    // The quote RPC deterministically assigns a flat transaction fee to one
+    // grouped row. Derive the row's fee from that authoritative quoted total
+    // so anonymous finalization and receipt verification use the same split.
+    const itemServiceFee = Math.max(0, itemTotal - itemCourtFee - itemExtraPlayerFee);
     return {
     ref: item.ref || genRef(),
     groupRef: sharedGroupRef,
@@ -7638,10 +7886,15 @@ async function submitBooking(e) {
     duration: item.duration,
     rate: item.rate,
     total: itemTotal,
+    playerCount: playerCountForItem(item),
+    includedPlayers: Number(item.includedPlayers || INCLUDED_PLAYERS_PER_COURT),
+    extraPlayerCount: Number(item.extraPlayerCount ?? extraPlayerCountForItem(item)),
+    extraPlayerRate: Number(item.extraPlayerRate || EXTRA_PLAYER_RATE),
+    extraPlayerFee: itemExtraPlayerFee,
     paymentMethod: payMethod,
     gcashRef: gcashRef || null,
     paymentFlow: payMethod,
-    downpayment: payFull ? itemTotal : roundBookingMoney((itemCourtFee / 2) + itemServiceFee),
+    downpayment: payFull ? itemTotal : roundBookingMoney((itemCourtFee / 2) + itemServiceFee + itemExtraPlayerFee),
     paymentStatus,
     status,
     createdAt,
@@ -7910,6 +8163,21 @@ function showInvoice(b) {
   set('iDate', fmtD(b.date));
   set('iTime', b.timeLabel || `${b.startTime} – ${b.endTime}`);
   set('iDur', `${b.duration} hr${b.duration !== 1 ? 's' : ''}`);
+  const invoiceItems = Array.isArray(b.groupItems) && b.groupItems.length ? b.groupItems : [b];
+  const playerEntries = invoiceItems.map(item => ({
+    courtName: item.courtName || item.court_name || 'Court',
+    count: playerCountForItem(item),
+    extraCount: extraPlayerCountForItem(item),
+    extraFee: Number(item.extraPlayerFee ?? item.extra_player_fee ?? extraPlayerFeeForItem(item)),
+  })).filter(entry => entry.count !== null);
+  set('iPlayers', playerEntries.length > 1
+    ? playerEntries.map(entry => `${entry.courtName}: ${entry.count}`).join(' · ')
+    : playerEntries.length ? String(playerEntries[0].count) : '—');
+  const invoiceExtraPlayerFee = playerEntries.reduce((sum, entry) => sum + (Number.isFinite(entry.extraFee) ? entry.extraFee : 0), 0);
+  if ($('iExtraPlayersRow')) $('iExtraPlayersRow').style.display = invoiceExtraPlayerFee > 0 ? '' : 'none';
+  set('iExtraPlayers', playerEntries.length > 1 && invoiceExtraPlayerFee > 0
+    ? `${playerEntries.filter(entry => entry.extraFee > 0).map(entry => `${entry.courtName}: ${entry.extraCount} × ${fmt(EXTRA_PLAYER_RATE)}`).join(' · ')} = ${fmt(invoiceExtraPlayerFee)}`
+    : fmt(invoiceExtraPlayerFee));
   set('iPay', payLabel);
 
   if (b.gcashRef) {

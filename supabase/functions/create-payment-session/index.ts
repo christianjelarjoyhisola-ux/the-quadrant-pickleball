@@ -26,6 +26,10 @@ type BookingRow = {
   status: string | null;
   payment_status: string | null;
   created_at: string | null;
+  player_count: number | null;
+  included_players: number | null;
+  extra_player_rate: number | null;
+  extra_player_fee: number | null;
 };
 
 type CourtRow = {
@@ -82,6 +86,43 @@ function roundMoney(value: number) {
 
 function closeMoney(a: number, b: number) {
   return Math.abs(roundMoney(a) - roundMoney(b)) <= 0.01;
+}
+
+const INCLUDED_PLAYERS = 8;
+const EXTRA_PLAYER_RATE = 100;
+
+function expectedExtraPlayerFee(booking: BookingRow, settings: Record<string, string>) {
+  const cutoffMs = new Date(settings.extra_player_pricing_cutover_at || "").getTime();
+  const createdMs = new Date(booking.created_at || "").getTime();
+  const requiresSnapshot = Number.isFinite(cutoffMs) && (!Number.isFinite(createdMs) || createdMs >= cutoffMs);
+  if (booking.player_count == null) {
+    if (requiresSnapshot) {
+      throw new Error("Player count is required before payment");
+    }
+    return 0;
+  }
+
+  const playerCount = Number(booking.player_count);
+  if (!Number.isInteger(playerCount) || playerCount < 1) throw new Error("Booking player count is invalid");
+  const fee = roundMoney(Math.max(playerCount - INCLUDED_PLAYERS, 0) * EXTRA_PLAYER_RATE);
+
+  if (requiresSnapshot && (
+    booking.included_players == null || booking.extra_player_rate == null || booking.extra_player_fee == null
+  )) throw new Error("Booking player pricing snapshot is incomplete");
+
+  // These values are database-authored immutable audit snapshots. Rechecking
+  // them here catches an incomplete migration or corrupted row without ever
+  // accepting a browser-supplied total.
+  if (booking.included_players != null && Number(booking.included_players) !== INCLUDED_PLAYERS) {
+    throw new Error("Booking included-player snapshot is invalid");
+  }
+  if (booking.extra_player_rate != null && !closeMoney(toNumber(booking.extra_player_rate), EXTRA_PLAYER_RATE)) {
+    throw new Error("Booking extra-player rate snapshot is invalid");
+  }
+  if (booking.extra_player_fee != null && !closeMoney(toNumber(booking.extra_player_fee), fee)) {
+    throw new Error("Booking extra-player fee snapshot is invalid");
+  }
+  return fee;
 }
 
 function checkoutReturnUrl(rawUrl: string, params: Record<string, string>) {
@@ -144,8 +185,9 @@ function expectedBookingAmounts(
   const feeRate = toNumber(settings.maintenance_fee ?? settings.service_fee_rate ?? settings.booking_fee);
   const feeType = settings.fee_type === "flat" ? "flat" : "per_hour";
   const serviceFee = feeType === "flat" ? (includeFlatFee ? feeRate : 0) : feeRate * slots.length;
-  const total = roundMoney(courtTotal + serviceFee);
-  const requiredPayment = roundMoney((courtTotal / 2) + serviceFee);
+  const extraPlayerFee = expectedExtraPlayerFee(booking, settings);
+  const total = roundMoney(courtTotal + serviceFee + extraPlayerFee);
+  const requiredPayment = roundMoney((courtTotal / 2) + serviceFee + extraPlayerFee);
   const storedDownpayment = booking.downpayment == null ? -1 : toNumber(booking.downpayment, -1);
   const mode = settings.payment_acceptance_mode || "both";
 
@@ -169,7 +211,7 @@ async function loadBookingGroup(
   if (!booking.booking_group_ref) return [booking];
   const { data, error } = await db
     .from("bookings")
-    .select("ref,booking_group_ref,full_name,email,contact_number,court_id,slots,total,downpayment,status,payment_status,created_at")
+    .select("ref,booking_group_ref,full_name,email,contact_number,court_id,slots,total,downpayment,status,payment_status,created_at,player_count,included_players,extra_player_rate,extra_player_fee")
     .eq("booking_group_ref", booking.booking_group_ref)
     .neq("status", "cancelled");
   if (error) throw error;
@@ -490,7 +532,7 @@ Deno.serve(async (req) => {
     } else {
       const { data: bookingData, error: bookingErr } = await db
         .from("bookings")
-        .select("ref,booking_group_ref,full_name,email,contact_number,court_id,slots,total,downpayment,status,payment_status,created_at")
+        .select("ref,booking_group_ref,full_name,email,contact_number,court_id,slots,total,downpayment,status,payment_status,created_at,player_count,included_players,extra_player_rate,extra_player_fee")
         .eq("ref", bookingRef)
         .single();
       if (bookingErr || !bookingData) {

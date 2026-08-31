@@ -11,6 +11,8 @@ type BookingConfirmationRow = {
   duration: number | string | null;
   total: number | string | null;
   downpayment: number | string | null;
+  player_count: number | string | null;
+  extra_player_fee: number | string | null;
 };
 
 export async function sendPaidBookingConfirmation(
@@ -19,7 +21,7 @@ export async function sendPaidBookingConfirmation(
   serviceRoleKey: string,
   bookingRef: string,
 ) {
-  const columns = "ref,booking_group_ref,full_name,email,contact_number,court_name,date,start_time,end_time,duration,total,downpayment";
+  const columns = "ref,booking_group_ref,full_name,email,contact_number,court_name,date,start_time,end_time,duration,total,downpayment,player_count,extra_player_fee";
   const { data: primaryData, error: primaryErr } = await db
     .from("bookings")
     .select(columns)
@@ -58,6 +60,8 @@ export async function sendPaidBookingConfirmation(
     duration: rows.reduce((sum, row) => sum + Number(row.duration || 0), 0),
     total,
     downpayment,
+    playerCount: primary.player_count == null ? null : Number(primary.player_count),
+    extraPlayerFee: rows.reduce((sum, row) => sum + Number(row.extra_player_fee || 0), 0),
     paymentMethod: "qrph",
     bookingItems: rows.map((row) => ({
       courtName: row.court_name || "Court",
@@ -67,6 +71,8 @@ export async function sendPaidBookingConfirmation(
       duration: Number(row.duration || 0),
       total: Number(row.total || 0),
       downpayment: Number(row.downpayment || 0),
+      playerCount: row.player_count == null ? null : Number(row.player_count),
+      extraPlayerFee: Number(row.extra_player_fee || 0),
     })),
     idempotencyKey: `booking-confirmation-${primary.booking_group_ref || primary.ref}`,
   };

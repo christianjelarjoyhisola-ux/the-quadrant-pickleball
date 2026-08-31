@@ -455,6 +455,41 @@ function closeMoney(a: number, b: number): boolean {
   return Math.abs(roundMoney(a) - roundMoney(b)) <= 0.01;
 }
 
+const INCLUDED_PLAYERS = 8;
+const EXTRA_PLAYER_RATE = 100;
+
+function expectedExtraPlayerFee(booking: Record<string, unknown>, settings: Record<string, string>): number {
+  const cutoffMs = new Date(settings.extra_player_pricing_cutover_at || "").getTime();
+  const createdMs = new Date(String(booking.created_at || booking.createdAt || "")).getTime();
+  const requiresSnapshot = Number.isFinite(cutoffMs) && (!Number.isFinite(createdMs) || createdMs >= cutoffMs);
+  if (booking.player_count == null && booking.playerCount == null) {
+    if (requiresSnapshot) {
+      throw new Error("Player count is required before payment");
+    }
+    return 0;
+  }
+
+  const playerCount = Number(booking.player_count ?? booking.playerCount);
+  if (!Number.isInteger(playerCount) || playerCount < 1) throw new Error("Booking player count is invalid");
+  const fee = roundMoney(Math.max(playerCount - INCLUDED_PLAYERS, 0) * EXTRA_PLAYER_RATE);
+  const includedSnapshot = booking.included_players ?? booking.includedPlayers;
+  const rateSnapshot = booking.extra_player_rate ?? booking.extraPlayerRate;
+  const feeSnapshot = booking.extra_player_fee ?? booking.extraPlayerFee;
+  if (requiresSnapshot && (includedSnapshot == null || rateSnapshot == null || feeSnapshot == null)) {
+    throw new Error("Booking player pricing snapshot is incomplete");
+  }
+  if (includedSnapshot != null && Number(includedSnapshot) !== INCLUDED_PLAYERS) {
+    throw new Error("Booking included-player snapshot is invalid");
+  }
+  if (rateSnapshot != null && !closeMoney(toNumber(rateSnapshot), EXTRA_PLAYER_RATE)) {
+    throw new Error("Booking extra-player rate snapshot is invalid");
+  }
+  if (feeSnapshot != null && !closeMoney(toNumber(feeSnapshot), fee)) {
+    throw new Error("Booking extra-player fee snapshot is invalid");
+  }
+  return fee;
+}
+
 function parseJsonArray(raw: unknown): Array<Record<string, unknown>> {
   if (Array.isArray(raw)) return raw as Array<Record<string, unknown>>;
   if (typeof raw !== "string" || !raw) return [];
@@ -504,14 +539,17 @@ function expectedOpenPlayAmount(booking: Record<string, unknown>, settings: Reco
   return chooseExpectedDue(total, toNumber(booking.downpayment, -1), settings);
 }
 
-async function expectedBookingAmount(
+async function expectedBookingAmounts(
   db: any,
   booking: Record<string, unknown>,
   settings: Record<string, string>,
   includeFlatFee = true,
-): Promise<number> {
+): Promise<{ total: number; due: number }> {
   const courtId = String(booking.court_id || "");
-  if (!courtId) return expectedOpenPlayAmount(booking, settings);
+  if (!courtId) {
+    const due = expectedOpenPlayAmount(booking, settings);
+    return { total: due, due };
+  }
 
   const slots = Array.isArray(booking.slots)
     ? booking.slots.map(Number).filter(Number.isFinite)
@@ -534,9 +572,11 @@ async function expectedBookingAmount(
   const feeRate = toNumber(settings.maintenance_fee ?? settings.service_fee_rate ?? settings.booking_fee);
   const feeType = settings.fee_type === "flat" ? "flat" : "per_hour";
   const serviceFee = feeType === "flat" ? (includeFlatFee ? feeRate : 0) : feeRate * slots.length;
-  const total = roundMoney(courtTotal + serviceFee);
-  const requiredPayment = roundMoney((courtTotal / 2) + serviceFee);
-  return chooseExpectedDue(total, toNumber(booking.downpayment, -1), settings, requiredPayment);
+  const extraPlayerFee = expectedExtraPlayerFee(booking, settings);
+  const total = roundMoney(courtTotal + serviceFee + extraPlayerFee);
+  const requiredPayment = roundMoney((courtTotal / 2) + serviceFee + extraPlayerFee);
+  const due = chooseExpectedDue(total, toNumber(booking.downpayment, -1), settings, requiredPayment);
+  return { total, due };
 }
 
 async function loadBookingGroup(
@@ -547,7 +587,7 @@ async function loadBookingGroup(
   if (!groupRef) return [booking];
   const { data, error } = await db
     .from("bookings")
-    .select("ref, booking_group_ref, court_id, slots, total, downpayment, gcash_ref, date, payment_status, status, full_name, created_at")
+    .select("ref, booking_group_ref, court_id, slots, total, downpayment, gcash_ref, date, payment_status, status, full_name, created_at, player_count, included_players, extra_player_rate, extra_player_fee")
     .eq("booking_group_ref", groupRef)
     .neq("status", "cancelled");
   if (error) throw error;
@@ -575,11 +615,11 @@ function uniqueBookingRows(rows: Array<Record<string, unknown>>): Array<Record<s
   });
 }
 
-async function expectedBookingGroupAmount(
+async function expectedBookingGroupAmounts(
   db: any,
   bookings: Array<Record<string, unknown>>,
   settings: Record<string, string>,
-): Promise<number> {
+): Promise<{ total: number; due: number }> {
   const rows = uniqueBookingRows(bookings);
   const candidateCount = settings.fee_type === "flat" ? rows.length : Math.min(rows.length, 1);
   let lastError: unknown = null;
@@ -589,19 +629,18 @@ async function expectedBookingGroupAmount(
   for (let feeIndex = 0; feeIndex < candidateCount; feeIndex += 1) {
     try {
       let due = 0;
+      let total = 0;
       for (let index = 0; index < rows.length; index += 1) {
-        due += await expectedBookingAmount(db, rows[index], settings, index === feeIndex);
+        const amounts = await expectedBookingAmounts(db, rows[index], settings, index === feeIndex);
+        due += amounts.due;
+        total += amounts.total;
       }
-      return roundMoney(due);
+      return { total: roundMoney(total), due: roundMoney(due) };
     } catch (error) {
       lastError = error;
     }
   }
   throw lastError || new Error("Booking amount does not match current pricing");
-}
-
-function bookingGroupStoredTotal(bookings: Array<Record<string, unknown>>): number {
-  return roundMoney(uniqueBookingRows(bookings).reduce((sum, row) => sum + toNumber(row.total), 0));
 }
 
 function bookingUpdateQuery(
@@ -914,7 +953,7 @@ Deno.serve(async (req) => {
     } else {
       const { data: bk, error: bErr } = await db
         .from("bookings")
-        .select("ref, booking_group_ref, court_id, slots, total, downpayment, gcash_ref, payment_method, date, payment_status, status, full_name, created_at")
+        .select("ref, booking_group_ref, court_id, slots, total, downpayment, gcash_ref, payment_method, date, payment_status, status, full_name, created_at, player_count, included_players, extra_player_rate, extra_player_fee")
         .eq("ref", bookingRef)
         .single();
       if (bErr || !bk) return json({ error: "Booking not found" }, 404);
@@ -933,13 +972,20 @@ Deno.serve(async (req) => {
     let expectedTotal = Number(booking.total || 0);
     let bookingGroup: Array<Record<string, unknown>> = [booking];
     try {
-      if (inlineBookingData && Number(booking.total || 0) > 0) {
+      if (inlineBookingData && booking.court_id) {
+        const amounts = await expectedBookingAmounts(db, booking, settings);
+        expectedTotal = amounts.total;
+        expectedAmount = amounts.due;
+      } else if (inlineBookingData) {
+        // Open Play and host-session registrations use this pre-save path and
+        // are not court-booking rows. Preserve their separate pricing flow.
         expectedTotal = roundMoney(Number(booking.total || 0));
         expectedAmount = chooseExpectedDue(expectedTotal, toNumber(booking.downpayment, expectedTotal), settings);
       } else {
         bookingGroup = await loadBookingGroup(db, booking);
-        expectedAmount = await expectedBookingGroupAmount(db, bookingGroup, settings);
-        expectedTotal = bookingGroupStoredTotal(bookingGroup);
+        const amounts = await expectedBookingGroupAmounts(db, bookingGroup, settings);
+        expectedAmount = amounts.due;
+        expectedTotal = amounts.total;
       }
     } catch (err) {
       pricingError = errMsg(err);

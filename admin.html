@@ -2863,6 +2863,11 @@ tr:hover td { background: var(--bg2); }
         <div class="fg" style="margin:0"><label class="fl">Contact Number *</label><input type="text" class="fi" id="nbPhone" placeholder="09XX XXX XXXX" inputmode="tel"/></div>
       </div>
       <div class="fg" style="margin-top:12px"><label class="fl">Email <span style="color:var(--muted);font-weight:400;text-transform:none">(optional)</span></label><input type="text" class="fi" id="nbEmail" placeholder="customer@email.com" inputmode="email"/></div>
+      <div class="fg" style="margin-top:12px">
+        <label class="fl">Players per Court *</label>
+        <input type="number" class="fi" id="nbPlayerCount" min="1" max="99" step="1" value="8" inputmode="numeric" oninput="nbUpdateTotal()"/>
+        <div style="font-size:.72rem;color:var(--muted);margin-top:4px">Up to 8 players are included. Each additional player is ₱100 per selected court.</div>
+      </div>
 
       <!-- Booking Details -->
       <div class="nb-section-label">Booking Details</div>
@@ -3327,7 +3332,7 @@ function bookingGroupScheduleLabel(items = []) {
 function bookingGroupBreakdownHtml(items = []) {
   return sortBookingsChronologically(uniqueBookingGroupItems(items)).map(b => `
     <div style="display:flex;justify-content:space-between;gap:10px;padding:5px 0;border-top:1px solid var(--border)">
-      <span>${esc(b.courtName)} | ${esc(b.startTime || '--')} - ${esc(b.endTime || '--')}</span>
+      <span>${esc(b.courtName)} | ${esc(b.startTime || '--')} - ${esc(b.endTime || '--')}${b.playerCount == null ? '' : `<br><small>${Number(b.playerCount)} players${Number(b.extraPlayerFee || 0) > 0 ? ` · ${fmt(b.extraPlayerFee)} extra-player fee` : ''}</small>`}</span>
       <strong style="color:var(--text)">${fmt(b.total || 0)}</strong>
     </div>`).join('');
 }
@@ -3367,6 +3372,8 @@ function groupBookings(bookings = []) {
       scheduleLabel: bookingGroupScheduleLabel(items),
       total,
       downpayment,
+      playerCount: commonValue(items, 'playerCount', primary.playerCount ?? null),
+      extraPlayerFee: items.reduce((sum, b) => sum + Number(b.extraPlayerFee || 0), 0),
       paymentMethod: commonValue(items, 'paymentMethod', primary.paymentMethod || ''),
       receivedAccount: commonValue(items, 'receivedAccount', primary.receivedAccount || receivedAccountKey(primary)),
       paymentStatus: bookingGroupStatus(items, 'paymentStatus'),
@@ -3658,6 +3665,7 @@ function mobileBookingCard(b, canDelete){
       <div class="mb-book-sub">${esc(dateLabel)}</div>
       <div class="mb-book-summary">
         <span class="mb-book-chip amount">${fmt(b.total)}</span>
+        ${b.playerCount == null ? '' : `<span class="mb-book-chip">${Number(b.playerCount)} players${b.isGroup ? '/court' : ''}</span>`}
         <span class="mb-book-chip">${esc(payMethod)}</span>
         <span class="mb-book-chip ${['unpaid','rejected','failed'].includes(String(b.paymentStatus || '').toLowerCase()) ? 'warn' : ''}">${esc(payState)}</span>
       </div>
@@ -3667,6 +3675,8 @@ function mobileBookingCard(b, canDelete){
       <div class="mb-book-detail-grid">
         <div class="mb-book-detail-row"><span>Total</span><span>${fmt(b.total)}</span></div>
         <div class="mb-book-detail-row"><span>Down</span><span>${dp >= b.total ? 'Full payment' : `${fmt(dp)} down`}</span></div>
+        ${b.playerCount == null ? '' : `<div class="mb-book-detail-row"><span>Players</span><span>${Number(b.playerCount)}${b.isGroup ? ' per court' : ''}</span></div>`}
+        ${Number(b.extraPlayerFee || 0) > 0 ? `<div class="mb-book-detail-row"><span>Extra-player fee</span><span>${fmt(b.extraPlayerFee)}</span></div>` : ''}
         ${b.gcashRef ? `<div class="mb-book-detail-row"><span>Ref</span><span><code>${esc(b.gcashRef)}</code></span></div>` : ''}
         <div class="mb-book-detail-row"><span>Payment</span><span>${esc(payMethod)}</span></div>
         <div class="mb-book-detail-row"><span>Booked</span><span>${esc(bookedOn)}</span></div>
@@ -4131,6 +4141,7 @@ async function renderBookings(){
       <td data-label="Booked On">${b.createdAt ? (() => { const d=new Date(b.createdAt); return d.toLocaleDateString('en-PH',{month:'short',day:'numeric',year:'numeric'}) + '<div style="font-size:.75rem;color:var(--muted);font-weight:600">' + d.toLocaleTimeString('en-PH',{hour:'numeric',minute:'2-digit',hour12:true}) + '</div>'; })() : '<span style="color:var(--muted)">—</span>'}</td>
       <td data-label="Amount"><div class="amount-stack">
         <div class="amount-main">${fmt(b.total)}</div>
+        ${b.playerCount == null ? '' : `<div style="font-size:.73rem;color:var(--text);margin-top:2px;font-weight:700">${Number(b.playerCount)} players${b.isGroup ? ' / court' : ''}${Number(b.extraPlayerFee || 0) > 0 ? ` · ${fmt(b.extraPlayerFee)} extra` : ''}</div>`}
         ${(()=>{ const dp=b.downpayment||b.total/2; return dp>=b.total ? `<div style="font-size:.73rem;color:var(--text);margin-top:2px;font-weight:700">✅ Full payment</div>` : `<div style="font-size:.73rem;color:var(--text);margin-top:2px;font-weight:700">⚡ ${fmt(dp)} down</div>`; })()}
         ${b.gcashRef?`<div style="font-size:.7rem;margin-top:1px;font-weight:700">Ref: <code style="color:var(--text)">${esc(b.gcashRef)}</code></div>`:''}
       </div></td>
@@ -4882,6 +4893,7 @@ async function openNewBookingModal() {
   $('nbName').value = '';
   $('nbPhone').value = '';
   $('nbEmail').value = '';
+  $('nbPlayerCount').value = '8';
   $('nbGcashRef').value = '';
   $('nbMethod').value = 'cash';
   $('nbStatus').value = 'confirmed';
@@ -5373,6 +5385,17 @@ function nbRequiredPayment(courtFee, bookingFee) {
   return nbRoundMoney((Number(courtFee) / 2) + Number(bookingFee));
 }
 
+function nbPlayerCount() {
+  const count = Number($('nbPlayerCount')?.value);
+  return Number.isInteger(count) && count >= 1 ? count : 0;
+}
+
+function nbExtraPlayerFee(groups = nbSelectionGroups()) {
+  const count = nbPlayerCount();
+  if (!count || count <= 8) return 0;
+  return (count - 8) * 100 * groups.length;
+}
+
 async function openNewBookingModal() {
   _nbCourts = (await DB.getCourts()).filter(c => !c.blocked);
   _nbSelectedCourtIds = new Set(_nbCourts.map(c => String(c.id)));
@@ -5402,6 +5425,7 @@ async function openNewBookingModal() {
   $('nbName').value = '';
   $('nbPhone').value = '';
   $('nbEmail').value = '';
+  $('nbPlayerCount').value = '8';
   $('nbGcashRef').value = '';
   $('nbMethod').value = 'cash';
   $('nbStatus').value = 'confirmed';
@@ -5513,8 +5537,9 @@ function nbUpdateTotal() {
   const groups = nbSelectionGroups();
   const courtFee = groups.reduce((sum, group) => sum + group.total, 0);
   const bookingFee = nbBookingFee(groups);
-  const total = courtFee + bookingFee;
-  const requiredPayment = nbRequiredPayment(courtFee, bookingFee);
+  const extraPlayerFee = nbExtraPlayerFee(groups);
+  const total = courtFee + bookingFee + extraPlayerFee;
+  const requiredPayment = nbRequiredPayment(courtFee, bookingFee) + extraPlayerFee;
   const selectedPayment = _nbDpFull ? total : requiredPayment;
   const remainingBalance = _nbDpFull ? 0 : courtFee / 2;
 
@@ -5536,8 +5561,10 @@ function nbUpdateTotal() {
     <div class="nb-sum-list">${rows}</div>
     <div class="nb-sum-row"><span>Court Fee</span><strong>${fmt(courtFee)}</strong></div>
     <div class="nb-sum-row"><span>Booking Fee</span><strong>${fmt(bookingFee)}</strong></div>
+    ${nbPlayerCount() ? `<div class="nb-sum-row"><span>Players per Court</span><strong>${nbPlayerCount()}</strong></div>` : ''}
+    ${extraPlayerFee > 0 ? `<div class="nb-sum-row"><span>Extra Players<br><span class="nb-sum-muted">${nbPlayerCount() - 8} × ₱100 × ${groups.length} booking${groups.length === 1 ? '' : 's'}</span></span><strong>${fmt(extraPlayerFee)}</strong></div>` : ''}
     <div class="nb-sum-row nb-sum-total"><span>Grand Total</span><span>${fmt(total)}</span></div>
-    <div class="nb-sum-row"><span>${_nbDpFull ? 'Full Payment' : 'Required Payment'}${_nbDpFull ? '' : '<br><span class="nb-sum-muted">50% court fee + full booking fee</span>'}</span><strong>${fmt(selectedPayment)}</strong></div>
+    <div class="nb-sum-row"><span>${_nbDpFull ? 'Full Payment' : 'Required Payment'}${_nbDpFull ? '' : '<br><span class="nb-sum-muted">50% court fee + full booking fee + full extra-player fee</span>'}</span><strong>${fmt(selectedPayment)}</strong></div>
     <div class="nb-sum-row"><span>Remaining Court Balance</span><strong>${fmt(remainingBalance)}</strong></div>
   </div>`;
 }
@@ -5556,6 +5583,8 @@ function nbAggregateBooking(baseRef, groupRef, bookings, groups, total, downpaym
     timeLabel: groups.map(g => `${fmtHour(g.startH)}-${fmtHour(g.endH)}`).join(', '),
     total,
     downpayment,
+    playerCount: primary.playerCount ?? null,
+    extraPlayerFee: bookings.reduce((sum, booking) => sum + Number(booking.extraPlayerFee || 0), 0),
     duration: groups.reduce((sum, group) => sum + group.slots.length, 0),
   };
 }
@@ -5572,13 +5601,16 @@ async function saveNewBooking() {
   const groups = nbSelectionGroups();
   const courtFee = groups.reduce((sum, group) => sum + group.total, 0);
   const bookingFee = nbBookingFee(groups);
-  const total = courtFee + bookingFee;
-  const downpayment = _nbDpFull ? total : nbRequiredPayment(courtFee, bookingFee);
+  const playerCount = nbPlayerCount();
+  const extraPlayerFee = nbExtraPlayerFee(groups);
+  const total = courtFee + bookingFee + extraPlayerFee;
+  const downpayment = _nbDpFull ? total : nbRequiredPayment(courtFee, bookingFee) + extraPlayerFee;
   const payStatus = _nbDpFull ? 'paid' : 'downpayment_paid';
 
   if (!name || name.length < 2) { toast('Enter a valid customer name.', 'err'); return; }
   if (!/^(09|\+639)\d{9}$/.test(phone)) { toast('Enter a valid PH number (e.g. 09XX XXX XXXX).', 'err'); return; }
   if (!date) { toast('Please select a date.', 'err'); return; }
+  if (!Number.isInteger(playerCount) || playerCount < 1 || playerCount > 99) { toast('Enter a whole-number player count from 1 to 99.', 'err'); return; }
   if (!groups.length) { toast('Please select at least one available slot.', 'err'); return; }
   if (method === 'gcash' && !gcashRef) { toast('Please enter the GCash reference number.', 'err'); return; }
 
@@ -5590,7 +5622,8 @@ async function saveNewBooking() {
     const itemBookingFee = _nbFeeConfig.type === 'flat'
       ? (index === 0 ? _nbFeeConfig.amount : 0)
       : _nbFeeConfig.amount * group.slots.length;
-    const itemTotal = group.total + itemBookingFee;
+    const itemExtraPlayerFee = Math.max(0, playerCount - 8) * 100;
+    const itemTotal = group.total + itemBookingFee + itemExtraPlayerFee;
     return {
       ref,
       groupRef,
@@ -5606,9 +5639,11 @@ async function saveNewBooking() {
       duration: group.slots.length,
       rate: group.court.rate,
       total: itemTotal,
+      playerCount,
+      extraPlayerFee: itemExtraPlayerFee,
       paymentMethod: method,
       gcashRef,
-      downpayment: _nbDpFull ? itemTotal : nbRequiredPayment(group.total, itemBookingFee),
+      downpayment: _nbDpFull ? itemTotal : nbRequiredPayment(group.total, itemBookingFee) + itemExtraPlayerFee,
       paymentStatus: payStatus,
       paymentFlow: method,
       status,
@@ -5859,8 +5894,8 @@ async function exportCSV(){
   if(fd) bks=bks.filter(b=>b.date===fd);
   if(fs) bks=bks.filter(b=>b.status===fs);
   bks = groupBookings(bks.filter(b=>b.email!=='reserve@hold.internal'));
-  const h=['Transaction Ref','Name','Email','Contact','Court(s)','Schedule','Hrs','Total','Paid Using','Money Received To','Payment Status','Booking Status','Created','Child Refs'];
-  const rows=bks.map(b=>[b.displayRef||b.ref,b.fullName,b.email,b.contactNumber,b.courtName,b.scheduleLabel||`${fmtD(b.date)} ${b.startTime}-${b.endTime}`,b.duration,b.total,paymentMethodLabel(b.paymentMethod),receivedAccountLabel(b),b.paymentStatus||'unpaid',b.status,b.createdAt,(b.refs||[b.ref]).join(' ')]);
+  const h=['Transaction Ref','Name','Email','Contact','Court(s)','Schedule','Hrs','Players per Court','Extra-player Fee','Total','Paid Using','Money Received To','Payment Status','Booking Status','Created','Child Refs'];
+  const rows=bks.map(b=>[b.displayRef||b.ref,b.fullName,b.email,b.contactNumber,b.courtName,b.scheduleLabel||`${fmtD(b.date)} ${b.startTime}-${b.endTime}`,b.duration,b.playerCount??'',b.extraPlayerFee||0,b.total,paymentMethodLabel(b.paymentMethod),receivedAccountLabel(b),b.paymentStatus||'unpaid',b.status,b.createdAt,(b.refs||[b.ref]).join(' ')]);
   const csv=[h,...rows].map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
   const a=document.createElement('a');
   a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
@@ -6051,8 +6086,8 @@ async function renderReport(){
 async function exportReportCSV(){
   if(!_rpBks.length && _curSection !== 'reports') await renderReport();
   const bks=_rpBks;
-  const h=['Transaction Ref','Name','Email','Contact','Court(s)','Schedule','Hrs','Total','Amount Paid/Downpayment','Paid Using','Money Received To','Payment Status','Booking Status','Created','Child Refs'];
-  const rows=bks.map(b=>[b.displayRef||b.ref,b.fullName,b.email,b.contactNumber,b.courtName,b.scheduleLabel||`${fmtD(b.date)} ${b.startTime}-${b.endTime}`,b.duration,b.total,b.downpayment??'',paymentMethodLabel(b.paymentMethod),receivedAccountLabel(b),b.paymentStatus||'unpaid',b.status,b.createdAt,(b.refs||[b.ref]).join(' ')]);
+  const h=['Transaction Ref','Name','Email','Contact','Court(s)','Schedule','Hrs','Players per Court','Extra-player Fee','Total','Amount Paid/Downpayment','Paid Using','Money Received To','Payment Status','Booking Status','Created','Child Refs'];
+  const rows=bks.map(b=>[b.displayRef||b.ref,b.fullName,b.email,b.contactNumber,b.courtName,b.scheduleLabel||`${fmtD(b.date)} ${b.startTime}-${b.endTime}`,b.duration,b.playerCount??'',b.extraPlayerFee||0,b.total,b.downpayment??'',paymentMethodLabel(b.paymentMethod),receivedAccountLabel(b),b.paymentStatus||'unpaid',b.status,b.createdAt,(b.refs||[b.ref]).join(' ')]);
   const csv=[h,...rows].map(r=>r.map(v=>`"${String(v??'').replace(/"/g,'""')}"`).join(',')).join('\n');
   const a=document.createElement('a');
   a.href=URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
@@ -6573,7 +6608,7 @@ const rmReservations=r=>Math.max(0,Math.trunc(rmNum(rmVal(r,'reservation_count',
 function rmDate(value,dateOnly=false){if(!value)return'—';const raw=String(value),d=new Date(/^\d{4}-\d{2}-\d{2}$/.test(raw)?raw+'T00:00:00+08:00':raw);if(Number.isNaN(d.getTime()))return raw;return new Intl.DateTimeFormat('en-PH',{timeZone:'Asia/Manila',month:'short',day:'numeric',year:'numeric',...(dateOnly?{}:{hour:'numeric',minute:'2-digit'})}).format(d)+(dateOnly?'':' PHT');}
 function rmStatus(r){const raw=String(rmVal(r,'status')||rmVal(rmPayment(r),'status')||'').toLowerCase().replace(/_/g,'-');if(r?.is_overdue&&!['settled','cancelled'].includes(raw))return'overdue';if(['settled','paid','accepted'].includes(raw))return'settled';if(['submitted','pending','under-review'].includes(raw))return'under-review';if(['payment-rejected','rejected'].includes(raw))return'rejected';if(['cancelled','canceled'].includes(raw))return'cancelled';return'awaiting-payment';}
 function rmStatusLabel(s){return({'awaiting-payment':'Awaiting Payment','under-review':'Under Review',overdue:'Overdue',rejected:'Rejected',settled:'Settled',cancelled:'Cancelled'})[s]||s;}
-function rmBreakdown(r){const rows=rmVal(r,'fee_breakdown','rate_type_breakdown')||[];if(!Array.isArray(rows)||!rows.length)return rmCount(r)?`${rmCount(r)} booking fee line${rmCount(r)===1?'':'s'}`:'No eligible booking fees.';return rows.map(x=>String(x.fee_type)==='flat'?`${fmt(x.fee_rate)} flat × ${rmNum(x.booking_rows_count||x.item_count)} = ${fmt(x.amount)}`:`${fmt(x.fee_rate)}/hr × ${rmNum(x.fee_units||x.billable_hours)} hr = ${fmt(x.amount)}`).join(' + ');}
+function rmBreakdown(r){const rows=rmVal(r,'fee_breakdown','rate_type_breakdown')||[];if(!Array.isArray(rows)||!rows.length)return rmCount(r)?`${rmCount(r)} booking fee line${rmCount(r)===1?'':'s'}`:'No eligible booking fees.';return rows.map(x=>{const flat=String(x.fee_type)==='flat',units=flat?rmNum(x.booking_rows_count||x.item_count):rmNum(x.fee_units||x.billable_hours),gross=Math.round((rmNum(x.fee_rate)*units+Number.EPSILON)*100)/100,net=rmNum(x.amount),deduction=Math.max(0,Math.round((gross-net+Number.EPSILON)*100)/100),formula=flat?`${fmt(x.fee_rate)} flat × ${units}`:`${fmt(x.fee_rate)}/hr × ${units} hr`;return deduction>0.009?`${formula} = ${fmt(gross)} − ${fmt(deduction)} legacy PayMongo = ${fmt(net)}`:`${formula} = ${fmt(net)}`;}).join(' + ');}
 function rmRecordCard(r){const status=rmStatus(r),p=rmPayment(r),role=String(_rmState.dashboard?.role||sess?.role||''),id=rmId(r);const actions=[`<button class="btn btn-g btn-sm" onclick="openRemittanceDetail('${jsArg(id)}')">Details</button>`];if(['owner','court_owner'].includes(role)&&['awaiting-payment','overdue','rejected'].includes(status))actions.push(`<button class="btn btn-p btn-sm" onclick="openRemittancePayment('${jsArg(id)}')">${role==='owner'?'Record Payment':'Remit Now'}</button>`);if(role==='owner'&&status==='under-review')actions.push(`<button class="btn btn-p btn-sm" onclick="openRemittanceReview('${jsArg(id)}')">Review Proof</button>`);return`<article class="rm-record"><div class="rm-record-top"><div><div class="rm-ref">${esc(rmRef(r))}</div><div class="rm-copy">${esc(rmDate(r.coverage_start_at))} — ${esc(rmDate(r.cutoff_at))}</div></div><span class="rm-status ${status}">${esc(rmStatusLabel(status))}</span></div><div class="rm-record-grid"><div class="rm-field"><span>Amount due</span><strong>${fmt(rmDue(r))}</strong></div><div class="rm-field"><span>Remaining</span><strong>${fmt(rmRemaining(r))}</strong></div><div class="rm-field"><span>Court bookings</span><strong>${rmCount(r)}</strong></div><div class="rm-field"><span>Payment ref</span><strong>${esc(String(p.payment_reference||'—'))}</strong></div></div><div class="rm-breakdown">${esc(rmBreakdown(r))}</div><div class="rm-record-foot" style="margin-top:12px"><span class="rm-copy">Exact cutoff ${esc(rmDate(r.cutoff_at))}</span><div class="rm-actions">${actions.join('')}</div></div></article>`;}
 function renderRemittanceRecords(){const src=_rmState.tab==='history'?_rmState.history:_rmState.active,q=String($('rmSearch')?.value||'').toLowerCase(),filter=$('rmStatusFilter')?.value||'all';const rows=src.filter(r=>(filter==='all'||rmStatus(r)===filter)&&(!q||JSON.stringify(r).toLowerCase().includes(q)));$('rmListMeta').textContent=`${rows.length} of ${src.length} records shown`;$('rmRecordList').innerHTML=rows.length?rows.map(rmRecordCard).join(''):'<div class="rm-empty">No remittance records match this view.</div>';}
 function setRemittanceTab(tab){_rmState.tab=tab==='history'?'history':'active';$('rmActiveTab').classList.toggle('active',_rmState.tab==='active');$('rmHistoryTab').classList.toggle('active',_rmState.tab==='history');renderRemittanceRecords();}

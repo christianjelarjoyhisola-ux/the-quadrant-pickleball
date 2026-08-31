@@ -231,6 +231,8 @@ function _bookingEmailPayload(b) {
     duration: b.duration,
     total: b.total,
     downpayment: b.downpayment || Math.round((b.total || 0) * 0.5),
+    playerCount: b.playerCount ?? null,
+    extraPlayerFee: Number(b.extraPlayerFee || 0),
     contactNumber: b.contactNumber,
     bookingItems: items.map(item => ({
       courtName: item.courtName,
@@ -240,6 +242,8 @@ function _bookingEmailPayload(b) {
       duration: item.duration,
       total: item.total,
       downpayment: item.downpayment,
+      playerCount: item.playerCount ?? null,
+      extraPlayerFee: Number(item.extraPlayerFee || 0),
     })),
   };
 }
@@ -278,6 +282,7 @@ function _openPlayEmailPayload(r) {
 }
 
 function _telegramBookingPayload(b, extras = {}) {
+  const items = Array.isArray(b.groupItems) && b.groupItems.length ? b.groupItems : [];
   return {
     bookingRef: b.ref,
     fullName: b.fullName,
@@ -289,6 +294,13 @@ function _telegramBookingPayload(b, extras = {}) {
     duration: b.duration,
     total: b.total,
     downpayment: b.downpayment || Math.round((b.total || 0) * 0.5),
+    playerCount: b.playerCount ?? null,
+    playerSummary: items.length > 1
+      ? items.map(item => `${item.courtName}: ${item.playerCount ?? '?'}`).join(' | ')
+      : '',
+    extraPlayerFee: items.length
+      ? items.reduce((sum, item) => sum + Number(item.extraPlayerFee || 0), 0)
+      : Number(b.extraPlayerFee || 0),
     paymentMethod: b.paymentMethod,
     paymentStatus: b.paymentStatus,
     bookingStatus: b.status,
@@ -355,6 +367,10 @@ function rowToBooking(r) {
     duration:      r.duration,
     rate:          r.rate,
     total:         r.total,
+    playerCount:   r.player_count == null ? null : Number(r.player_count),
+    includedPlayers: r.included_players == null ? 8 : Number(r.included_players),
+    extraPlayerRate: r.extra_player_rate == null ? 100 : Number(r.extra_player_rate),
+    extraPlayerFee: Number(r.extra_player_fee || 0),
     paymentMethod: r.payment_method,
     receivedAccount: receivedAccountForBooking(r),
     paymentFlow:   r.payment_flow || null,
@@ -463,6 +479,7 @@ function hasSlotConflict(existingBookings, booking) {
 }
 
 function bookingToRow(b) {
+  const hasPlayerCount = b.playerCount !== undefined && b.playerCount !== null;
   return {
     ref:            b.ref,
     booking_group_ref: b.groupRef || null,
@@ -478,6 +495,10 @@ function bookingToRow(b) {
     duration:       b.duration,
     rate:           b.rate,
     total:          b.total,
+    player_count:   hasPlayerCount ? b.playerCount : null,
+    included_players: hasPlayerCount ? (b.includedPlayers ?? 8) : null,
+    extra_player_rate: hasPlayerCount ? (b.extraPlayerRate ?? 100) : null,
+    extra_player_fee: hasPlayerCount ? Number(b.extraPlayerFee || 0) : null,
     payment_method: b.paymentMethod,
     received_account: receivedAccountForBooking(b),
     payment_flow:   b.paymentFlow || null,
@@ -734,6 +755,26 @@ window.DB = {
     return rowToBooking(data);
   },
 
+  async quoteBookingPlayerCount(ref, playerCount) {
+    const { data, error } = await _sb.rpc('quote_booking_player_count', {
+      p_ref: ref,
+      p_player_count: playerCount,
+    });
+    if (error) { console.error('quoteBookingPlayerCount:', error); throw error; }
+    const quote = Array.isArray(data) ? data[0] : data;
+    if (!quote) throw new Error('The reservation could not be priced. It may have expired.');
+    _pbClearFastCache(['bookings']);
+    return {
+      bookingRef: quote.booking_ref,
+      playerCount: Number(quote.player_count),
+      includedPlayers: Number(quote.included_players),
+      extraPlayerRate: Number(quote.extra_player_rate),
+      extraPlayerFee: Number(quote.extra_player_fee),
+      total: Number(quote.total),
+      downpayment: quote.downpayment == null ? null : Number(quote.downpayment),
+    };
+  },
+
   async updateBooking(ref, updates) {
     // Map only the fields provided (camelCase → snake_case)
     const row = {};
@@ -743,6 +784,10 @@ window.DB = {
     if (updates.contactNumber !== undefined) row.contact_number = updates.contactNumber;
     if (updates.email     !== undefined) row.email = updates.email;
     if (updates.total     !== undefined) row.total = updates.total;
+    if (updates.playerCount !== undefined) row.player_count = updates.playerCount;
+    if (updates.includedPlayers !== undefined) row.included_players = updates.includedPlayers;
+    if (updates.extraPlayerRate !== undefined) row.extra_player_rate = updates.extraPlayerRate;
+    if (updates.extraPlayerFee !== undefined) row.extra_player_fee = updates.extraPlayerFee;
     if (updates.paymentMethod !== undefined) row.payment_method = updates.paymentMethod;
     if (updates.receivedAccount !== undefined) row.received_account = receivedAccountForBooking(updates);
     else if (updates.paymentMethod !== undefined) row.received_account = receivedAccountForBooking(updates);
@@ -1790,6 +1835,10 @@ window.DB = {
       const row = {
         ...booking,
         ref: booking.ref || localRef('PB'),
+        playerCount: booking.playerCount ?? null,
+        includedPlayers: booking.includedPlayers ?? 8,
+        extraPlayerRate: booking.extraPlayerRate ?? 100,
+        extraPlayerFee: Number(booking.extraPlayerFee || 0),
         receivedAccount: receivedAccountForBooking(booking),
         createdAt: booking.createdAt || nowIso(),
       };
@@ -1797,6 +1846,59 @@ window.DB = {
       writeDb(db);
     },
     async getBookingByRef(ref) { return readDb().bookings.find(b => String(b.ref) === String(ref)) || null; },
+    async quoteBookingPlayerCount(ref, playerCount) {
+      const count = Number(playerCount);
+      if (!Number.isInteger(count) || count < 1 || count > 99) {
+        throw new Error('Player count must be a whole number from 1 to 99.');
+      }
+      const db = readDb();
+      const index = db.bookings.findIndex(b => String(b.ref) === String(ref));
+      if (index < 0) throw new Error('The reservation could not be found.');
+      const booking = db.bookings[index];
+      if (String(booking.status || '').toLowerCase() === 'cancelled' || isExpiredTemporaryBookingHold(booking)) {
+        throw new Error('The reservation has expired. Please select the slot again.');
+      }
+      if (booking.playerCount != null && Number(booking.playerCount) !== count) {
+        throw new Error('The player count for this reservation has already been finalized.');
+      }
+      if (booking.playerCount != null) {
+        return {
+          bookingRef: booking.ref,
+          playerCount: Number(booking.playerCount),
+          includedPlayers: Number(booking.includedPlayers ?? 8),
+          extraPlayerRate: Number(booking.extraPlayerRate ?? 100),
+          extraPlayerFee: Number(booking.extraPlayerFee || 0),
+          total: Number(booking.total || 0),
+          downpayment: booking.downpayment == null ? null : Number(booking.downpayment),
+        };
+      }
+      const includedPlayers = Number(booking.includedPlayers ?? 8);
+      const extraPlayerRate = Number(booking.extraPlayerRate ?? 100);
+      const oldExtraPlayerFee = Number(booking.extraPlayerFee || 0);
+      const extraPlayerFee = Math.max(0, count - includedPlayers) * extraPlayerRate;
+      const isFlatFee = String(db.settings?.fee_type || '').toLowerCase() === 'flat';
+      const groupRows = booking.groupRef
+        ? db.bookings.filter(b => b.groupRef === booking.groupRef && String(b.status || '').toLowerCase() !== 'cancelled')
+        : [];
+      const groupFeeRef = groupRows.map(b => String(b.ref || '')).filter(Boolean).sort()[0] || null;
+      const flatFee = Number(db.settings?.maintenance_fee ?? db.settings?.service_fee_rate ?? 0);
+      const duplicateFlatFee = isFlatFee && booking.groupRef && String(booking.ref) !== groupFeeRef ? flatFee : 0;
+      const total = Math.max(0, Number(booking.total || 0) - oldExtraPlayerFee - duplicateFlatFee) + extraPlayerFee;
+      const downpayment = booking.downpayment == null
+        ? null
+        : Math.max(0, Number(booking.downpayment) - oldExtraPlayerFee - duplicateFlatFee) + extraPlayerFee;
+      db.bookings[index] = {
+        ...booking,
+        playerCount: count,
+        includedPlayers,
+        extraPlayerRate,
+        extraPlayerFee,
+        total,
+        downpayment,
+      };
+      writeDb(db);
+      return { bookingRef: booking.ref, playerCount: count, includedPlayers, extraPlayerRate, extraPlayerFee, total, downpayment };
+    },
     async updateBooking(ref, updates) {
       const db = readDb();
       db.bookings = db.bookings.map(b => {

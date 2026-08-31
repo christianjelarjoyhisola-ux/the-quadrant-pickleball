@@ -18,6 +18,9 @@ type BookingPayload = {
   duration: number;
   total: number;
   downpayment: number;
+  playerCount?: number | null;
+  playerSummary?: string;
+  extraPlayerFee?: number;
   paymentMethod: string;
   paymentStatus?: string;
   bookingStatus?: string;
@@ -100,6 +103,10 @@ function buildBookingMessage(p: BookingPayload): string {
   const paidLine = p.downpayment >= p.total
     ? `Full payment: <b>${fmtPHP(p.downpayment)}</b>`
     : `Required payment: <b>${fmtPHP(p.downpayment)}</b>`;
+  const playerValue = p.playerSummary ? esc(p.playerSummary) : p.playerCount == null ? "" : String(Number(p.playerCount));
+  const playerLine = playerValue
+    ? `Players: <b>${playerValue}</b>${Number(p.extraPlayerFee || 0) > 0 ? ` (extra-player fee: <b>${fmtPHP(Number(p.extraPlayerFee))}</b>)` : ""}\n`
+    : "";
 
   return (
     `<b>NEW BOOKING</b>\n` +
@@ -109,6 +116,7 @@ function buildBookingMessage(p: BookingPayload): string {
     `<b>${esc(p.courtName)}</b>\n` +
     `${fmtDate(p.date)}\n` +
     `${esc(p.startTime)} - ${esc(p.endTime)} (${p.duration} hr${p.duration !== 1 ? "s" : ""})\n\n` +
+    playerLine +
     `Payment: <b>${esc(method)}</b>${paymentRef}\n` +
     `Total: ${fmtPHP(p.total)}\n` +
     `${paidLine}\n\n` +
@@ -124,6 +132,10 @@ function buildBookingUpdateMessage(p: BookingUpdatePayload): string {
   const paymentState = p.paymentStatus ? `\nPayment status: <b>${esc(p.paymentStatus)}</b>` : "";
   const bookingState = p.bookingStatus ? `\nBooking status: <b>${esc(p.bookingStatus)}</b>` : "";
   const noteLine = p.note ? `\nNote: ${esc(p.note)}\n` : "\n";
+  const playerValue = p.playerSummary ? esc(p.playerSummary) : p.playerCount == null ? "" : String(Number(p.playerCount));
+  const playerLine = playerValue
+    ? `Players: <b>${playerValue}</b>${Number(p.extraPlayerFee || 0) > 0 ? ` (extra-player fee: <b>${fmtPHP(Number(p.extraPlayerFee))}</b>)` : ""}\n`
+    : "";
 
   return (
     `<b>${esc(eventLabel(p.event).toUpperCase())}</b>\n` +
@@ -134,6 +146,7 @@ function buildBookingUpdateMessage(p: BookingUpdatePayload): string {
     `<b>${esc(p.courtName)}</b>\n` +
     `${fmtDate(p.date)}\n` +
     `${esc(p.startTime)} - ${esc(p.endTime)} (${p.duration} hr${p.duration !== 1 ? "s" : ""})\n\n` +
+    playerLine +
     `Payment: <b>${esc(method)}</b>${paymentRef}\n` +
     `Total: ${fmtPHP(p.total)}\n` +
     `Paid / required: <b>${fmtPHP(p.downpayment)}</b>` +

@@ -18,6 +18,8 @@ type Payload = {
   duration: number;
   total: number;
   downpayment: number;
+  playerCount?: number | null;
+  extraPlayerFee?: number;
   contactNumber?: string;
   timeLabel?: string;
   paymentType?: string;
@@ -31,6 +33,8 @@ type Payload = {
     duration: number;
     total: number;
     downpayment?: number;
+    playerCount?: number | null;
+    extraPlayerFee?: number;
   }>;
 };
 
@@ -70,6 +74,8 @@ function buildHtml(p: Payload): string {
       duration: p.duration,
       total: p.total,
       downpayment: p.downpayment,
+      playerCount: p.playerCount,
+      extraPlayerFee: p.extraPlayerFee,
     }];
   const courtName = escapeHtml([...new Set(bookingItems.map(item => item.courtName).filter(Boolean))].join(", ") || p.courtName);
   const dates = [...new Set(bookingItems.map(item => item.date).filter(Boolean))];
@@ -78,6 +84,11 @@ function buildHtml(p: Payload): string {
     `${escapeHtml(item.courtName)}: ${escapeHtml(item.startTime)} &ndash; ${escapeHtml(item.endTime)}`
   ).join("<br/>");
   const duration = bookingItems.reduce((sum, item) => sum + Number(item.duration || 0), 0) || Number(p.duration || 0);
+  const extraPlayerFee = bookingItems.reduce((sum, item) => sum + Number(item.extraPlayerFee || 0), 0) || Number(p.extraPlayerFee || 0);
+  const knownPlayerItems = bookingItems.filter(item => item.playerCount != null && Number.isFinite(Number(item.playerCount)));
+  const playerSummary = knownPlayerItems.length === 1
+    ? `${Number(knownPlayerItems[0].playerCount)} player${Number(knownPlayerItems[0].playerCount) === 1 ? "" : "s"}`
+    : knownPlayerItems.map(item => `${escapeHtml(item.courtName)}: ${Number(item.playerCount)}`).join("<br/>");
   const itemRows = bookingItems.length > 1 ? bookingItems.map(item => `
           <tr>
             <td style="padding:10px 12px;border-top:1px solid #384033;color:#f7fafc;font-weight:700;">${escapeHtml(item.courtName)}</td>
@@ -136,6 +147,18 @@ function buildHtml(p: Payload): string {
               </td>
             </tr></table>
           </td></tr>
+          ${knownPlayerItems.length ? `<tr><td style="padding:14px 22px;border-bottom:1px solid #384033;">
+            <table width="100%"><tr>
+              <td width="50%" style="vertical-align:top;">
+                <div style="font-size:.7rem;text-transform:uppercase;letter-spacing:1px;color:#aab6c5;margin-bottom:3px;">Players${knownPlayerItems.length > 1 ? " per Court" : ""}</div>
+                <div style="font-size:.92rem;font-weight:700;color:#f7fafc;">${playerSummary}</div>
+              </td>
+              <td width="50%" style="vertical-align:top;">
+                <div style="font-size:.7rem;text-transform:uppercase;letter-spacing:1px;color:#aab6c5;margin-bottom:3px;">Extra-player Fee</div>
+                <div style="font-size:.92rem;font-weight:700;color:#f7fafc;">${fmtPHP(extraPlayerFee)}</div>
+              </td>
+            </tr></table>
+          </td></tr>` : ""}
           <tr><td style="padding:14px 22px;border-bottom:1px solid #384033;">
             <table width="100%"><tr>
               <td width="50%" style="vertical-align:top;">

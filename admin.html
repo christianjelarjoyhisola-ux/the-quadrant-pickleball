@@ -3715,7 +3715,23 @@ async function goto(s){
   document.getElementById('sidebarOverlay').classList.remove('show');
   _curSection=s;
   if (s === 'bookings') resetBookingFilters({ render: false });
-  if(SECTION_LOADERS[s]) await SECTION_LOADERS[s]();
+  const panel = $('sec-'+s);
+  panel.querySelector('.section-load-error')?.remove();
+  try {
+    if(SECTION_LOADERS[s]) await SECTION_LOADERS[s]();
+  } catch (error) {
+    console.error('Section load failed:', error);
+    const notice = document.createElement('div');
+    notice.className = 'section-load-error';
+    notice.setAttribute('role', 'alert');
+    notice.textContent = 'This section could not be loaded. Check your connection and try again. ';
+    const retry = document.createElement('button');
+    retry.textContent = 'Retry';
+    retry.onclick = () => goto(s);
+    notice.appendChild(retry);
+    panel.prepend(notice);
+    toast('Could not load this section. Please retry.', 'err');
+  }
 }
 
 /* ==============================================
@@ -3766,10 +3782,10 @@ async function renderDash(){
   const _curMonth = `${_now.getFullYear()}-${String(_now.getMonth()+1).padStart(2,'0')}`;
   const _mEl = $('maintMonth');
   if (_mEl && !_mEl.value) _mEl.value = _curMonth;
-  renderMaintFee();
+  renderMaintFee().catch(error => { console.error(error); toast('Could not load booking fees. Please retry.', 'err'); });
 
   const bks=await DB.getBookings();
-  const today=new Date().toISOString().split('T')[0];
+  const today=new Intl.DateTimeFormat('en-CA', {timeZone:'Asia/Manila',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
   // Exclude placeholder slot-holds ("Reserving…") — they are temporary locks, not real bookings.
   const realBks=bks.filter(isDashboardReportBooking);
   const active=realBks.filter(isDashboardActiveBooking);
@@ -8632,6 +8648,7 @@ function gmExportCsv() {
 }
 
 
+let _mtLoaded = false;
 let _mtRules = [];
 let _mtCourts = [];
 const MT_LABELS = ['12:00 AM','1:00 AM','2:00 AM','3:00 AM','4:00 AM','5:00 AM','6:00 AM','7:00 AM','8:00 AM','9:00 AM','10:00 AM','11:00 AM','12:00 PM','1:00 PM','2:00 PM','3:00 PM','4:00 PM','5:00 PM','6:00 PM','7:00 PM','8:00 PM','9:00 PM','10:00 PM','11:00 PM','12:00 AM (midnight)'];
@@ -8648,7 +8665,8 @@ function mtGenId() {
 }
 
 async function renderMaintenance() {
-  const [settings, courts] = await Promise.all([DB.getSettings(), DB.getCourts()]);
+  _mtLoaded = false;
+  const [settings, courts] = await Promise.all([DB.getMaintenanceSettings(), DB.getCourts()]);
   _mtCourts = courts;
   const raw = settings.maintenance_config ? JSON.parse(settings.maintenance_config) : null;
 
@@ -8660,7 +8678,11 @@ async function renderMaintenance() {
   } else {
     _mtRules = [];
   }
+  if (_mtRules.some(rule => !rule || typeof rule.id !== 'string' || !Array.isArray(rule.dates) || (rule.courtIds != null && !Array.isArray(rule.courtIds)))) {
+    throw new Error('Invalid maintenance rules. Existing settings have not been changed.');
+  }
   mtRenderRules();
+  _mtLoaded = true;
 }
 
 function mtRenderRules() {
@@ -8807,6 +8829,7 @@ function mtRemoveDateFromRule(id, d) {
 }
 
 async function saveMaintenance() {
+  if (!_mtLoaded) { toast('Load the existing rules successfully before saving.', 'err'); return; }
   mtCollectFromDom();
   for (const rule of _mtRules) {
     if (!rule.enabled) continue;
@@ -8863,6 +8886,7 @@ function updateThemeBtn() {
 function logout(){ Auth.logout(); }
 
 document.addEventListener('DOMContentLoaded', async ()=>{
+  try {
   // Local demo data can use a browser-only owner session. When localhost is
   // connected to the live Supabase project, require real Supabase Auth so RLS
   // permits settings writes such as platform rate changes.
@@ -8875,7 +8899,7 @@ document.addEventListener('DOMContentLoaded', async ()=>{
   if (!allowLocalBypass) {
     // Verify real Supabase Auth and rebuild browser session from the accounts table.
     // Browser storage is only a cache; it is not trusted for role selection.
-    const verifiedSession = await Auth.refreshSessionFromAuth();
+    const verifiedSession = await _withTimeout(Auth.refreshSessionFromAuth(), 20000, 'Dashboard sign in');
     if (!verifiedSession) {
       localStorage.removeItem('pb_session');
       sessionStorage.removeItem('pb_session');
@@ -8913,13 +8937,18 @@ document.addEventListener('DOMContentLoaded', async ()=>{
     : Auth.can('host_open_play', role) ? 'hosts'
     : 'payments';
   // Show agreement gate for court_owner before entering dashboard
-  const gated = await checkAgreementGate(sess);
+  const gated = await _withTimeout(checkAgreementGate(sess), 20000, 'Agreement check');
   if (!gated) await goto(firstAllowed);
   setAdminReady();
   startAdminRealtime();
   // Housekeeping: purge old abandoned slot-holds so the table stays tidy.
   // Runs in the background (admin is authenticated, so DELETE is permitted by RLS).
   cleanupAbandonedHolds();
+  } catch (error) {
+    console.error('Admin initialization failed:', error);
+    const card = document.querySelector('.admin-boot-card');
+    if (card) card.innerHTML = '<p role="alert">The dashboard could not be loaded. Check your connection and try again.</p><button type="button" onclick="location.reload()">Retry</button>';
+  }
 });
 
 /* Delete leftover "Reserving…" holds that were abandoned (cancelled) more than
@@ -9221,6 +9250,6 @@ async function checkAgreementGate(session) {
 </script>
 
 <script src="supabase.min.js"></script>
-<script src="supabase-config.js?v=20260825-remittance-ledger"></script>
+<script src="supabase-config.js?v=20261016-reliability"></script>
 </body>
 </html>

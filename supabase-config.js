@@ -6,8 +6,22 @@
 const SUPABASE_URL = 'https://mjwmvlhzjkaduwdtfwiu.supabase.co';
 const SUPABASE_ANON_KEY = 'sb_publishable_WL9HDB-8NW4UrqD2g2Htrw_rOE-fMW_';
 
-// Initialize Supabase client (uses UMD global loaded from CDN)
-const _sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+// Bound reads so a lost connection cannot leave the interface waiting forever.
+// Writes are not retried: an interrupted response may still have committed.
+async function _pbReadFetch(url, options = {}) {
+  if (!['GET', 'HEAD'].includes(String(options.method || 'GET').toUpperCase())) return fetch(url, options);
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  if (options.signal?.aborted) abort();
+  else options.signal?.addEventListener('abort', abort, { once: true });
+  const timer = setTimeout(abort, 15000);
+  try { return await fetch(url, { ...options, signal: controller.signal }); }
+  finally {
+    clearTimeout(timer);
+    options.signal?.removeEventListener('abort', abort);
+  }
+}
+const _sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, { global: { fetch: _pbReadFetch } });
 
 // Expose globally so HTML pages can use real-time subscriptions
 window._supabase = _sb;
@@ -70,13 +84,13 @@ async function _pbCached(scope, params, ttlMs, loader) {
   if (hit && now - hit.at < ttlMs) return _pbClone(hit.value);
 
   const promise = Promise.resolve()
-    .then(loader)
+    .then(() => _withTimeout(loader(), 15000, `${scope} load`))
     .then(value => {
-      _pbFastCache.set(key, { at: Date.now(), value });
+      if (_pbFastCache.get(key)?.promise === promise) _pbFastCache.set(key, { at: Date.now(), value });
       return value;
     })
     .catch(err => {
-      _pbFastCache.delete(key);
+      if (_pbFastCache.get(key)?.promise === promise) _pbFastCache.delete(key);
       throw err;
     });
   _pbFastCache.set(key, { at: now, promise });
@@ -692,7 +706,7 @@ window.DB = {
   async getCourts() {
     return _pbCached('courts', {}, PB_FAST_CACHE_MS.courts, async () => {
       const { data, error } = await _sb.from('courts').select('*').order('id');
-      if (error) { console.error('getCourts:', error); return []; }
+      if (error) { console.error('getCourts:', error); throw error; }
       return data.map(rowToCourt);
     });
   },
@@ -724,7 +738,7 @@ window.DB = {
       if (opts.courtId) query = query.eq('court_id', String(opts.courtId));
       if (opts.activeOnly) query = query.neq('status', 'cancelled');
       const { data, error } = await query;
-      if (error) { console.error('getBookings:', error); return []; }
+      if (error) { console.error('getBookings:', error); throw error; }
       return data.map(rowToBooking);
     });
   },
@@ -827,7 +841,7 @@ window.DB = {
 
   async deleteBooking(ref) {
     const { error } = await _sb.from('bookings').delete().eq('ref', ref);
-    if (error) console.error('deleteBooking:', error);
+    if (error) { console.error('deleteBooking:', error); throw error; }
     _pbClearFastCache(['bookings']);
   },
 
@@ -908,7 +922,7 @@ window.DB = {
         .or(`payment_status.eq.paid,and(payment_status.eq.pending,created_at.gte.${cutoffIso}),payment_status.is.null`);
       if (courtId) query = query.eq('court_id', String(courtId));
       const { count, error } = await query;
-      if (error) { console.error('getOpenPlayCountForDate:', error); return 0; }
+      if (error) { console.error('getOpenPlayCountForDate:', error); throw error; }
       return count || 0;
     });
   },
@@ -920,7 +934,7 @@ window.DB = {
         .select('court_id')
         .eq('date', date)
         .or(`payment_status.eq.paid,and(payment_status.eq.pending,created_at.gte.${cutoffIso}),payment_status.is.null`);
-      if (error) { console.error('getOpenPlayCountsForDate:', error); return {}; }
+      if (error) { console.error('getOpenPlayCountsForDate:', error); throw error; }
       return (data || []).reduce((counts, row) => {
         const key = String(row.court_id || '');
         counts[key] = (counts[key] || 0) + 1;
@@ -931,7 +945,7 @@ window.DB = {
 
   async deleteOpenPlayRegistration(id) {
     const { error } = await _sb.from('open_play_registrations').delete().eq('id', id);
-    if (error) console.error('deleteOpenPlayRegistration:', error);
+    if (error) { console.error('deleteOpenPlayRegistration:', error); throw error; }
     _pbClearFastCache(['openPlayRegistrations', 'openPlayCount', 'openPlayCounts']);
   },
 
@@ -1140,20 +1154,20 @@ window.DB = {
   async getBlockedDates() {
     return _pbCached('blockedDates', {}, PB_FAST_CACHE_MS.blockedDates, async () => {
       const { data, error } = await _sb.from('blocked_dates').select('date').order('date');
-      if (error) { console.error('getBlockedDates:', error); return []; }
+      if (error) { console.error('getBlockedDates:', error); throw error; }
       return data.map(r => r.date);
     });
   },
 
   async addBlockedDate(date) {
     const { error } = await _sb.from('blocked_dates').insert({ date, created_at: new Date().toISOString() });
-    if (error) console.error('addBlockedDate:', error);
+    if (error) { console.error('addBlockedDate:', error); throw error; }
     _pbClearFastCache(['blockedDates']);
   },
 
   async removeBlockedDate(date) {
     const { error } = await _sb.from('blocked_dates').delete().eq('date', date);
-    if (error) console.error('removeBlockedDate:', error);
+    if (error) { console.error('removeBlockedDate:', error); throw error; }
     _pbClearFastCache(['blockedDates']);
   },
 
@@ -1171,14 +1185,23 @@ window.DB = {
 
   async deleteAccount(id) {
     const { error } = await _sb.from('accounts').delete().eq('id', id);
-    if (error) console.error('deleteAccount:', error);
+    if (error) { console.error('deleteAccount:', error); throw error; }
   },
 
   // ---- SETTINGS ----
+  async getMaintenanceSettings() {
+    if (window.PB_USE_LOCAL_DATA) return this.getSettings();
+    return _pbCached('settings', { section: 'maintenance' }, PB_FAST_CACHE_MS.settings, async () => {
+      const { data, error } = await _sb.from('settings').select('key,value').eq('key', 'maintenance_config');
+      if (error) throw error;
+      return Object.fromEntries((data || []).map(row => [row.key, row.value]));
+    });
+  },
+
   async getSettings() {
     return _pbCached('settings', {}, PB_FAST_CACHE_MS.settings, async () => {
       const { data, error } = await _sb.from('settings').select('*');
-      if (error) { console.error('getSettings:', error); return {}; }
+      if (error) { console.error('getSettings:', error); throw error; }
       const out = {};
       data.forEach(r => out[r.key] = r.value);
       return out;
@@ -2291,6 +2314,7 @@ window.DB = {
       writeDb(db);
     },
 
+    async getMaintenanceSettings() { return { maintenance_config: readDb().settings.maintenance_config }; },
     async getSettings() { return readDb().settings; },
     async saveSetting(key, value) {
       const db = readDb();
@@ -2431,15 +2455,16 @@ window.Auth = {
   },
 
   async refreshSessionFromAuth({ remember = null } = {}) {
-    const { data: authData, error } = await _sb.auth.getUser();
+    const { data: authData, error } = await _withTimeout(_sb.auth.getUser(), 15000, 'Sign in verification');
     if (error || !authData?.user) return null;
 
-    const { data: acc } = await _sb
+    const { data: acc, error: accountError } = await _sb
       .from('accounts')
       .select('*')
       .eq('id', authData.user.id)
       .maybeSingle();
 
+    if (accountError) throw accountError;
     const session = acc
       ? { ...rowToAccount(acc), loginAt: new Date().toISOString() }
       : {

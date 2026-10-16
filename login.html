@@ -119,12 +119,20 @@ async function doLogin(e) {
   btn.disabled = true;
   btn.textContent = 'Logging in…';
   const remember = document.getElementById('rememberMe').checked;
-  const r = await Auth.login(u, p, remember);
+  try {
+  const r = await _withTimeout(Auth.login(u, p, remember), 20000, 'Sign in');
   if (r.ok) {
     const params = new URLSearchParams(window.location.search);
-    window.location.href = params.get('next') || 'admin.html';
+    window.location.href = 'admin.html';
   } else {
     document.getElementById('errBox').classList.add('show');
+    btn.disabled = false;
+    btn.textContent = 'Login to Dashboard →';
+  }
+  } catch (error) {
+    document.getElementById('errBox').textContent = 'Could not sign in. Check your connection and try again.';
+    document.getElementById('errBox').classList.add('show');
+  } finally {
     btn.disabled = false;
     btn.textContent = 'Login to Dashboard →';
   }
@@ -183,6 +191,6 @@ async function doSetPassword() {
 }
 </script>
 <script src="supabase.min.js"></script>
-<script src="supabase-config.js?v=20260825-remittance-ledger"></script>
+<script src="supabase-config.js?v=20261016-reliability"></script>
 </body>
 </html>

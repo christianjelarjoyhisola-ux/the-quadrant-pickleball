@@ -5379,7 +5379,8 @@ async function completeQrphPaidBooking(booking) {
     return;
   }
   const fresh = await DB.getBookingByRef(booking.ref).catch(() => null);
-  const paidBooking = { ...(fresh || booking), paymentStatus: 'paid', status: 'confirmed', paidAt: (fresh || booking)?.paidAt || new Date().toISOString() };
+  if (!fresh || !['paid', 'downpayment_paid'].includes(fresh.paymentStatus)) { toast('Payment is awaiting verification. Please check again.', 'inf'); return; }
+  const paidBooking = fresh;
   sendCustomerConfirmationEmail(paidBooking);
   showInvoice(paidBooking);
   resetForm();
@@ -6803,6 +6804,14 @@ async function ensureCourt(courtId) {
    COURTS
    ============================================= */
 async function renderCourts() {
+  try { return await renderCourtsData(); }
+  catch (error) {
+    const grid = $('courtsGrid');
+    if (grid) grid.innerHTML = '<div role="alert">Court availability could not be loaded. <button type="button" onclick="location.reload()">Reload</button></div>';
+    throw error;
+  }
+}
+async function renderCourtsData() {
   const today = todayStr();
   const selectedDate = selectedCourtBrowseDate();
   const isSelectedToday = selectedDate === today;
@@ -8535,8 +8544,8 @@ async function handleOpenPlayPaymentReturn({ payment, bookingRef, params }) {
 
   if (reg) {
     if (reg.payment_status !== 'paid' && reg.paymentStatus !== 'paid') {
-      await DB.updateOpenPlayRegistration(openPlayRegistrationId, { paymentStatus: 'paid' }).catch(() => {});
-      reg = { ...reg, payment_status: 'paid', paymentStatus: 'paid' };
+      toast('Payment is still awaiting verification. Please check again before making another payment.', 'inf');
+      return false;
     }
     DB.sendOpenPlayConfirmationEmail({ ...reg, id: openPlayRegistrationId, ref: opRef, payment_status: 'paid' }, { allowFailure: true }).catch(() => {});
     showOpenPlayConfirmed(reg);
@@ -8565,7 +8574,7 @@ async function handlePaymentReturn() {
 
   if (openPlayReturnId) {
     const handled = await handleOpenPlayPaymentReturn({ payment, bookingRef, params });
-    history.replaceState({}, document.title, location.pathname || '/');
+    if (handled) history.replaceState({}, document.title, location.pathname || '/');
     return handled;
   }
 
@@ -8595,12 +8604,12 @@ async function handlePaymentReturn() {
       }
       toast('QRPh checkout was cancelled. The slot is available again.', 'inf');
     }
-    if (payment === 'success') {
-      booking.paymentStatus = 'paid';
-      booking.status = 'confirmed';
-      booking.paidAt = booking.paidAt || new Date().toISOString();
-      sendCustomerConfirmationEmail(booking);
+    const verifiedPaid = ['paid', 'downpayment_paid'].includes(booking.paymentStatus || booking.payment_status);
+    if (payment === 'success' && !verifiedPaid) {
+      toast('Payment is still awaiting verification. Please check again before making another payment.', 'inf');
+      return false;
     }
+    if (payment === 'success' && verifiedPaid) sendCustomerConfirmationEmail(booking);
     showInvoice(booking);
     await renderCourts();
     if (booking.courtId && booking.date) await onCardDate(booking.courtId, booking.date).catch(() => {});
@@ -8615,8 +8624,7 @@ async function handlePaymentReturn() {
 
 document.addEventListener('DOMContentLoaded', async () => {
   initDark();
-  await loadOperatingHours();
-  await expireStalePaymentHolds();
+  try {
   await renderCourts();
   await handlePaymentReturn();
   initGuestResumePersistence();
@@ -8635,6 +8643,11 @@ document.addEventListener('DOMContentLoaded', async () => {
   initGrandSplash();
   document.addEventListener('keydown', e => { if (e.key === 'Escape') { closeSharedDatePicker(); closeQrZoom(); closeFindTimeModal(); closeBookModal(); closeOpModal(); closeHostApplyModal(); closeHostSessionModal(); } });
   initScrollReveal();
+  } catch (error) {
+    console.error('Page initialization failed:', error);
+    dismissSplash();
+    toast('Could not finish loading. Please check your connection and reload.', 'err');
+  }
 });
 
 // Cancel any booking stuck in 'verifying' beyond the reservation window.
@@ -9378,7 +9391,7 @@ async function submitOpenPlay() {
 }
 </script>
 <script src="supabase.min.js"></script>
-<script src="supabase-config.js?v=20260825-remittance-ledger"></script>
+<script src="supabase-config.js?v=20261016-reliability"></script>
 
 <!-- MOBILE STICKY BOOK NOW BAR -->
 <div id="mobileBookBar" class="mobile-book-bar" style="display:none">

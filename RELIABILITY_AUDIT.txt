@@ -1,0 +1,188 @@
+RELEASE UPDATE — 16 October 2026
+Frontend fixes now address findings 1–7, bounded read/startup recovery, removal of
+public startup cleanup, Maintenance-only settings reads, and dashboard Manila date.
+The diagnostic script now asserts repaired behavior. Other backend/concurrency,
+pagination, polling, reschedule-date and capacity risks below remain follow-up work.
+The original audit follows; its initial failure descriptions are historical.
+
+THE QUADRANT — RELIABILITY AUDIT
+Date: 16 October 2026 (Asia/Manila)
+Repository baseline: f8d8a11
+
+SCOPE AND LIMITS
+Reviewed public startup, availability, booking/payment returns, login, shared
+database/cache layer, all admin section entry points, payment functions, booking
+conflict SQL, realtime refreshes, deployment responses and existing checks.
+Opened all 12 admin sections in a browser using local demo data. Production admin
+redirected to login; authenticated production actions were not exercised.
+No production bookings, payments, settings or database records were changed.
+This is a broad reliability review, not proof that every workflow is defect-free.
+The reported browser-level "can't open this page" is NOT yet reproduced.
+
+VERIFIED FINDINGS — OFFLINE FAILURE REPRODUCTIONS
+
+1. HIGH — Payment return can falsely show payment success.
+   index.html:8513, 8552
+   After polling, both return handlers can label a still-unpaid/pending record
+   paid. The court flow displays a paid invoice; Open Play also attempts a paid
+   update, ignores its failure, and displays confirmation anyway.
+   Reproduced with all payment sync responses pending and the Open Play update
+   rejected. This proves a false client confirmation, not that production RLS
+   permits unauthorized paid updates or that a real payment was lost.
+   Fix: use verified server payment state only; show pending verification otherwise.
+
+2. HIGH — Failed availability reads appear to be empty availability.
+   supabase-config.js:719, 902; index.html:6810
+   getBookings returns [] on database error; Open Play count returns zero.
+   Consumers cannot distinguish an outage from no reservations.
+   Reproduced with a simulated database error. Actual booking acceptance also
+   depends on database constraints; the test does not establish double booking.
+   Fix: fail closed for availability and show a retryable load error.
+
+3. HIGH — Temporary failures are cached as successful empty results.
+   supabase-config.js:65, 692, 1178
+   The court loader converts an error to [], which is cached for 60 seconds.
+   Settings failures similarly become {} for 30 seconds. Retrying during the
+   cache lifetime need not contact the database, even after it recovers.
+   Reproduced: second court request made no database call after the first failed.
+   Fix: reject errors and do not cache failure/default data as authoritative data.
+
+4. MEDIUM — Failed admin mutations can look successful.
+   supabase-config.js:828, 932, 1148, 1154, 1172
+   deleteBooking, deleteOpenPlayRegistration, addBlockedDate, removeBlockedDate,
+   and deleteAccount log errors but resolve. Callers may then show success.
+   Reproduced all five methods resolving against simulated failed database writes.
+   Fix: propagate errors and check affected rows where RLS can silently reject.
+
+5. MEDIUM — Old requests can overwrite newer cache entries.
+   supabase-config.js:65
+   clearCache does not invalidate the completion of an already-running loader.
+   Reproduced: an older request completed after a successful refresh and restored
+   its old result to the cache. Relevant during realtime updates and saves.
+   Fix: associate each cache request with an identity/generation before committing.
+
+6. MEDIUM — Login can remain stuck after a rejected authentication request.
+   login.html:113
+   doLogin disables the button, then awaits Auth.login without try/finally.
+   Reproduced a thrown request leaving the button disabled as "Logging in…".
+   Fix: restore button state in finally and show a retryable error.
+
+7. MEDIUM — Maintenance does not handle invalid saved configuration.
+   admin.html:8650; admin.html:3706
+   JSON.parse and rule rendering can throw; navigation has no catch/recovery UI.
+   Reproduced invalid JSON aborting renderMaintenance. IMPORTANT: the actual live
+   configuration was valid, with three rules, and rendered successfully in an
+   isolated test. This finding does NOT explain the reported incident by itself.
+   Fix: validate data and display an error without replacing/saving invalid rules.
+
+ADDITIONAL CODE / LIVE OBSERVATIONS
+
+8. HIGH — Initial loading depends on unnecessary sequential network work.
+   index.html:8616, 8657; admin.html:8865; supabase-config.js:10
+   Public startup awaits settings, abandoned-hold cleanup, then court rendering.
+   Cleanup fetches the booking list and awaits per-row updates. Admin hides its
+   layout until authentication, agreement checks and its first section complete.
+   These boot paths have no overall error recovery; ordinary DB calls have no
+   explicit application deadline. A stalled call can keep the UI waiting.
+   Fix: make startup bounded and recoverable; move housekeeping off the critical
+   path, preferably to a server-side job; do not expose unauthenticated admin UI.
+
+9. MEDIUM — All settings loads include an unnecessary large QR image.
+   supabase-config.js:1178
+   Live settings response: 231,008 bytes; embedded gcash_qr_image accounts for
+   about 227,648 serialized characters. One measured fetch took about 4 seconds.
+   Maintenance needs rules, not payment-image bytes. Timing is one observation,
+   not a latency benchmark or proof of a hosting outage.
+   Fix: load only required keys; store/load payment imagery separately.
+
+10. HIGH RISK — Payment creation retry can overlap the original request.
+    supabase-config.js:114, 1198; create-payment-session/index.ts:621, 682, 728
+    Promise.race times out after 12 seconds without cancelling the original
+    invocation; fallback sends another request. Server reuse checks only already
+    saved pending sessions, before creating and saving the new provider session.
+    Two concurrent calls can therefore both pass the reuse check. Not exercised
+    against PayMongo. Fix with server-side reservation/idempotency and reconciliation.
+
+11. HIGH RISK — Payment events do not enforce monotonic payment state.
+    supabase/functions/payment-webhook/index.ts:268, 323, 335, 357
+    The webhook writes incoming state without comparing existing paid state;
+    failed events can set a booking cancelled. An older failed/pending event
+    after paid can regress state. Signature checking exists, but ordering guards
+    are absent in this handler. Not reproduced with production payment events.
+    Fix: enforce allowed transitions and event/session identity atomically.
+
+12. HIGH RISK — Multi-step edits are not atomic.
+    supabase-config.js:1073; admin.html:5792, 5845
+    Game roster replacement deletes existing players before inserting replacements.
+    A failed insert leaves the old roster gone. Group rescheduling uses separate
+    writes and best-effort rollback whose failures are ignored.
+    Fix: transactional database functions; preserve and surface rollback failures.
+
+13. HIGH RISK — Booking conflict trigger uses a check without slot serialization.
+    supabase/migrations/20260716043000_release_expired_placeholder_holds.sql:11
+    The latest prevent_double_booking definition found checks existing rows with
+    IF EXISTS; it has no per-court/date lock or exclusion constraint in that code.
+    Concurrent inserts can both see an empty slot. Live database schema/isolation
+    was not inspected, and no concurrent bookings were submitted.
+    Fix: verify deployed constraints and enforce conflicts atomically in PostgreSQL.
+
+14. MEDIUM — Realtime refreshes and legacy payment polling can overlap.
+    index.html:5524, 8407; admin.html:3725
+    Realtime debounce delays refresh starts but does not serialize active refreshes.
+    startPaymentWatch uses async setInterval without an in-flight guard. Slow
+    requests can overlap subsequent ticks, increasing load and stale updates.
+    The newer checkQrphPaymentNow path DOES have a checking guard.
+    Fix: serialize/coalesce refreshes and use completion-based polling.
+
+15. MEDIUM — Reports and list reads have no pagination.
+    supabase-config.js:719, 835, 940, 966, 1162
+    Several whole-table reads rely on the API's response limit. A configured row
+    cap can silently truncate history and totals as data grows. Live anonymous
+    count was 153 bookings and zero Open Play registrations at audit time;
+    truncation was NOT demonstrated with current data.
+    Fix: paginate lists and compute report aggregates on the server.
+
+16. MEDIUM — Manila dates can be wrong before 8 AM.
+    admin.html:3772, 5738, 5739
+    Dashboard today and reschedule date limits use UTC toISOString date strings.
+    At 06:00 on 16 October in Manila, the UTC date is still 15 October.
+    Fix: consistently derive calendar dates in Asia/Manila.
+
+17. MEDIUM — Public Open Play count scope differs from admin wording.
+    index.html:6810, 6824; admin Open Play settings UI
+    Public rendering requests one count for the entire date, then applies that
+    same count to every court. Admin wording says capacity is per selected court.
+    Fix: settle the intended capacity model and use per-court counts if that is
+    the intended behavior. Current zero registrations do not demonstrate impact.
+
+CHECKS COMPLETED
+- npm run check:js: passed in the preceding investigation.
+- Inline scripts in index/admin/login/signature-view: syntax checked by VM parser.
+- npm run check:pricing, check:security, check:remittance: passed.
+- npm run check:functions: passed for all ten listed Edge Functions.
+- npm run check:audit: zero reported production dependency vulnerabilities.
+- node tools/audit-reliability.mjs: seven current failure behaviors reproduced.
+  This diagnostic intentionally asserts current bugs, not desired fixed behavior.
+- Local browser: Dashboard, Bookings, Payment Review, Reports, Courts, Open Play,
+  Host Center, Game Manager, Maintenance, Payments, Remittances, Accounts opened;
+  no console errors/warnings captured during this navigation pass. Empty/demo
+  data smoke tests do not validate real permissions, writes or external services.
+- Live homepage displayed four courts; production admin correctly required login.
+- Live HTML and DB GETs returned 200 during inspection. CSP was present and HTML
+  cache headers required revalidation. First HTML differences against local files
+  were Cloudflare-injected trailing scripts, not a demonstrated stale application.
+- Current Maintenance data rendered to about 28 KB of HTML with three rules;
+  no unusually large ruleset or invalid JSON was found.
+
+REPAIR ORDER
+1. Correct payment truth/transition handling and availability failure behavior.
+2. Add bounded startup and visible errors/retry; remove blocking cleanup and QR data.
+3. Fix cache invalidation, overlapping requests, and silent mutation errors.
+4. Make booking/payment/multi-row updates transactional and concurrency-safe.
+5. Add pagination, consistent Manila dates, and capacity semantics.
+
+REMAINING EVIDENCE NEEDED FOR THE REPORTED CRASH
+An authenticated reproduction on the affected device/browser, exact browser error
+and URL, plus request/console traces at the failure time. Supabase/Cloudflare logs
+and deployment state are not available from this unauthenticated review. No claim
+is made that the seven reproduced bugs are the exact cause of that browser error.

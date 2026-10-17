@@ -37,6 +37,7 @@
   "workspace": {
     "packageJson": {
       "dependencies": [
+        "npm:@electric-sql/pglite@0.5.10",
         "npm:@supabase/supabase-js@^2.108.1",
         "npm:pg@^8.21.0",
         "npm:wrangler@^4.100.0"

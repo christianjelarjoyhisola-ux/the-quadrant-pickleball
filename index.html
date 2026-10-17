@@ -7711,7 +7711,7 @@ async function submitBookingLegacy(e) {
     }
     bookingSaved = true;
 
-    // Notify owner via Telegram (fire-and-forget; never blocks booking flow).
+    // Owner email alerts are queued by the database when the booking is saved.
     DB.notifyBookingSubmitted(booking).catch(() => {});
 
     // ── Run OCR against the saved booking ────────────────────────────────
@@ -9320,16 +9320,7 @@ async function submitOpenPlay() {
       receiptVerifiedAt: receiptResult?.receiptVerifiedAt || null,
     });
 
-    // Fire-and-forget Telegram notification.
-    DB.sendTelegramNotification({
-      type: 'open_play',
-      fullName: name,
-      courtName: _opSignupData.courtName,
-      date: _opSignupData.date,
-      timeLabel,
-      paymentType: payType,
-      amount: amt,
-    }, { allowFailure: true }).catch(() => {});
+    // Owner email alerts are queued by the registration's database trigger.
 
     if (regPayStatus === 'paid') {
       DB.sendOpenPlayConfirmationEmail(registration, { allowFailure: true }).catch(() => {});
@@ -9391,7 +9382,7 @@ async function submitOpenPlay() {
 }
 </script>
 <script src="supabase.min.js"></script>
-<script src="supabase-config.js?v=20261017-refresh"></script>
+<script src="supabase-config.js?v=20261017-owner-email"></script>
 
 <!-- MOBILE STICKY BOOK NOW BAR -->
 <div id="mobileBookBar" class="mobile-book-bar" style="display:none">

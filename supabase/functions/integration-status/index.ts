@@ -56,6 +56,19 @@ function receiptOcrService(): ServiceStatus {
   };
 }
 
+function ownerEmailService(): ServiceStatus {
+  const status = service(
+    "owner_email", "Owner email notifications",
+    ["RESEND_API_KEY", "EMAIL_FROM", "OWNER_NOTIFICATION_WORKER_SECRET"], ["APP_ADMIN_URL"],
+    "Owners save private email recipients in Admin. Delivery requires the scheduled queue worker; sent means provider accepted, not confirmed inbox delivery.",
+  );
+  if ((Deno.env.get("OWNER_NOTIFICATION_WORKER_SECRET") || "").trim().length < 32) {
+    status.configured = false;
+    if (!status.missing.includes("OWNER_NOTIFICATION_WORKER_SECRET")) status.missing.push("OWNER_NOTIFICATION_WORKER_SECRET (at least 32 characters)");
+  }
+  return status;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   if (!["GET", "POST"].includes(req.method)) {
@@ -69,13 +82,7 @@ Deno.serve(async (req) => {
   const services: ServiceStatus[] = [
     service("email", "Email confirmations", ["RESEND_API_KEY"], ["EMAIL_FROM"]),
     service("sms", "SMS confirmations", ["SMS_API_PH_API_KEY"], [], "Sends confirmed booking texts through SMS API PH."),
-    service(
-      "telegram",
-      "Telegram admin alerts",
-      ["TELEGRAM_BOT_TOKEN", "TELEGRAM_WEBHOOK_SECRET", "TELEGRAM_REGISTRATION_CODE"],
-      ["APP_ADMIN_URL"],
-      "Chats are recorded automatically by the Telegram webhook and activated with the private setup code.",
-    ),
+    ownerEmailService(),
     service("payments", "PayMongo checkout", ["PAYMONGO_SECRET_KEY", "PAYMENT_SUCCESS_URL", "PAYMENT_CANCEL_URL"], ["PAYMENT_WEBHOOK_SECRET"]),
     receiptOcrService(),
     {

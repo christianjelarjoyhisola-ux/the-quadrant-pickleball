@@ -20,7 +20,6 @@
 // ----------------------------------------------------------------------------
 
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { sendTelegramHtml } from "../_shared/telegram.ts";
 import { Image } from "https://deno.land/x/imagescript@1.2.17/mod.ts";
 
 const corsHeaders = {
@@ -864,10 +863,6 @@ async function runOCR(
   return { text: "", confidence: 0, provider: "none" };
 }
 
-async function sendTelegram(message: string) {
-  await sendTelegramHtml(message);
-}
-
 // ── handler ─────────────────────────────────────────────────────────────────
 
 Deno.serve(async (req) => {
@@ -1329,21 +1324,7 @@ Deno.serve(async (req) => {
       raw_ocr_text: ocrText || null,
     });
 
-    // ── alert admin on anything needing a human ─────────────────────────────
-    if (result !== "auto_approved") {
-      const icon = result === "rejected" ? "❌" : "⚠️";
-      const head = result === "rejected" ? "RECEIPT REJECTED — BOOKING CANCELLED" : "RECEIPT NEEDS REVIEW";
-      await sendTelegram(
-        `${icon} <b>${head}</b>\n` +
-        `━━━━━━━━━━━━━━━━━━\n` +
-        `📋 Ref: <code>${bookingRef}</code>\n` +
-        `👤 ${booking.full_name || "—"}\n` +
-        `💰 Expected: ₱${expectedAmount.toFixed(2)}` +
-        (extractedAmount != null ? ` · Seen: ₱${extractedAmount.toFixed(2)}` : "") + `\n` +
-        `🚩 Flags: <code>${flags.join(", ") || "none"}</code>\n` +
-        (result === "rejected" ? `🗑 Booking auto-cancelled. Slot is now free.` : `👉 Open admin panel to review the receipt.`),
-      );
-    }
+    // Saved booking state changes enqueue private owner email notifications in SQL.
 
     return json({
       ok: true,

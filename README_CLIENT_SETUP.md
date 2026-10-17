@@ -23,7 +23,7 @@ Before launch, confirm and update:
 5. Update `supabase-config.js` with the new Supabase project URL and anon key.
 6. Run `node create-accounts.js` only after `.env.local` has the new service role key.
 7. Deploy the Supabase edge functions to the new Supabase project with `.\deploy-edge-functions.ps1`.
-8. Set any remaining provider/dashboard settings, including verified email sender, PayMongo webhook, payment accounts, and Telegram if used.
+8. Set remaining provider/dashboard settings, including verified email sender, PayMongo webhook, and payment accounts. Follow OWNER_EMAIL_SETUP.md to deploy the owner email queue, then use Admin > Email Notifications to save recipients and enable new/pending booking alerts. Player confirmation emails remain separate.
 9. Deploy the frontend to a new Cloudflare Pages project or domain.
 
 ## Important

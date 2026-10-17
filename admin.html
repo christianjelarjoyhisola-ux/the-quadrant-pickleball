@@ -1652,6 +1652,7 @@ tr:hover td { background: var(--bg2); }
       <div class="nav-item" data-s="gamemgr" data-perm="open_play" onclick="goto('gamemgr')"><span>&#127955;</span> Game Manager</div>
       <div class="nav-item" data-s="maintenance" data-perm="maintenance" onclick="goto('maintenance')"><span>&#128295;</span> Maintenance</div>
       <div class="nav-item" data-s="payments" data-perm="payments" onclick="goto('payments')"><span>&#128179;</span> Payments</div>
+      <div class="nav-item" data-s="notifications" data-perm="settings" onclick="goto('notifications')"><span>&#128231;</span> Email Notifications</div>
       <div class="nav-item" data-s="remittances" data-perm="remittances" onclick="goto('remittances')"><span>&#129534;</span> Remittances</div>
     </div>
     <div class="sb-section" data-perm="accounts">
@@ -2651,6 +2652,48 @@ tr:hover td { background: var(--bg2); }
           </table>
         </div>
         <div style="margin-top:10px;font-size:.76rem;color:var(--text3)">Statements are generated from the month the booking was made, not the future court play date. Only <strong>confirmed</strong> and <strong>completed</strong> bookings are included. Once generated, use <strong>Mark Received</strong> after verifying GCash remittance proof.</div>
+      </div>
+    </div>
+
+    <!-- OWNER EMAIL NOTIFICATIONS -->
+    <div id="sec-notifications" class="adm-sec">
+      <div class="toolbar"><h2>📧 EMAIL NOTIFICATIONS</h2></div>
+      <div class="panel" style="max-width:760px;margin-bottom:20px">
+        <h4>Booking alerts for you</h4>
+        <p style="color:var(--text2);font-size:.86rem;line-height:1.6;margin:8px 0 18px">Choose where you receive court booking updates. These settings belong to your account. Customer confirmation emails continue separately.</p>
+        <form id="ownerEmailForm" novalidate onsubmit="saveOwnerEmailPreferences(event)" oninput="ownerEmailFormChanged()" onchange="ownerEmailFormChanged()">
+          <fieldset id="ownerEmailFields" disabled style="border:0;padding:0;margin:0;min-width:0">
+            <label style="display:flex;align-items:center;gap:10px;font-weight:700;margin-bottom:18px"><input type="checkbox" id="ownerEmailEnabled"> Enable email notifications</label>
+            <div class="fg">
+              <label class="fl" id="ownerEmailRecipientsLabel" for="ownerEmailRecipients">Email addresses</label>
+              <textarea class="fi" id="ownerEmailRecipients" rows="3" placeholder="owner@example.com&#10;backup@example.com" aria-labelledby="ownerEmailRecipientsLabel" aria-describedby="ownerEmailRecipientsHelp" autocomplete="off" spellcheck="false" style="resize:vertical"></textarea>
+              <p id="ownerEmailRecipientsHelp" style="font-size:.78rem;color:var(--text2);line-height:1.5;margin-top:6px">One address per line. Put your primary email first, followed by up to two optional backup emails. Each saved address receives the selected alerts.</p>
+            </div>
+            <fieldset style="border:0;padding:0;margin:18px 0;min-width:0">
+              <legend class="fl" style="margin-bottom:10px">Notify me about</legend>
+              <div style="display:grid;gap:12px;font-size:.86rem">
+                <label style="display:flex;align-items:flex-start;gap:9px"><input type="checkbox" id="ownerEmailNew" checked style="margin-top:3px"><span><strong>New bookings</strong><br><span style="color:var(--text2)">A player has submitted a booking.</span></span></label>
+                <label style="display:flex;align-items:flex-start;gap:9px"><input type="checkbox" id="ownerEmailPending" checked style="margin-top:3px"><span><strong>Pending / payment review</strong><br><span style="color:var(--text2)">A booking needs your attention to review its payment.</span></span></label>
+              </div>
+            </fieldset>
+            <p style="font-size:.8rem;color:var(--text2);line-height:1.6;margin-bottom:16px">A new pending booking gets one alert. If its payment later needs review, you may receive a separate review alert. There are no periodic reminders. Confirmation emails go to players.</p>
+            <div style="display:flex;gap:10px;flex-wrap:wrap">
+              <button class="btn btn-p" id="ownerEmailSave" type="submit">Save settings</button>
+              <button class="btn btn-g" id="ownerEmailTest" type="button" disabled onclick="sendOwnerEmailTest()">Send Test Email</button>
+            </div>
+          </fieldset>
+        </form>
+        <p id="ownerEmailSavedStatus" style="font-size:.8rem;color:var(--text2);margin-top:16px">Loading your saved settings…</p>
+        <p id="ownerEmailFeedback" role="status" aria-live="polite" aria-atomic="true" style="font-size:.84rem;line-height:1.5;margin-top:8px"></p>
+        <button class="btn btn-g btn-sm" id="ownerEmailReload" type="button" hidden onclick="reloadOwnerEmailPreferences()" style="display:none;margin-top:10px">Reload saved settings</button>
+      </div>
+      <div class="panel" style="max-width:760px">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px">
+          <h4 style="margin:0">Recent delivery history</h4>
+          <button class="btn btn-g btn-sm" id="ownerEmailHistoryRefresh" type="button" onclick="refreshOwnerEmailHistory()">Refresh history</button>
+        </div>
+        <p style="font-size:.8rem;color:var(--text2);line-height:1.5;margin-bottom:14px">“Sent” means the email provider accepted the message. It does not confirm that it reached your inbox. Check your spam folder if an email is missing.</p>
+        <div id="ownerEmailHistory" aria-live="polite" aria-busy="false" style="display:grid;gap:10px"><p style="color:var(--text2);font-size:.84rem">Loading delivery history…</p></div>
       </div>
     </div>
 
@@ -3699,9 +3742,9 @@ function setAdminReady() {
 /* ==============================================
    NAVIGATION
    ============================================== */
-const titles={dash:'Dashboard',bookings:'Bookings',payreview:'Payment Review',reports:'Reports',courts:'Courts',accounts:'Accounts',blocked:'Open Play',hosts:'Host Center',gamemgr:'Game Manager',maintenance:'Maintenance',payments:'Payments',remittances:'Remittances'};
-const SECTION_PERM={dash:'dashboard',bookings:'bookings',payreview:'payment_review',reports:'reports',courts:'courts',accounts:'accounts',blocked:'open_play',hosts:'host_open_play',gamemgr:'open_play',maintenance:'maintenance',payments:'payments',remittances:'remittances'};
-const SECTION_LOADERS={dash:renderDash,bookings:renderBookings,payreview:renderPaymentReview,reports:renderReport,courts:renderCourts,accounts:renderAccounts,blocked:renderBlocked,hosts:renderHostCenter,gamemgr:renderGameManager,maintenance:renderMaintenance,payments:renderPaymentSettings,remittances:renderRemittances};
+const titles={dash:'Dashboard',bookings:'Bookings',payreview:'Payment Review',reports:'Reports',courts:'Courts',accounts:'Accounts',blocked:'Open Play',hosts:'Host Center',gamemgr:'Game Manager',maintenance:'Maintenance',payments:'Payments',notifications:'Email Notifications',remittances:'Remittances'};
+const SECTION_PERM={dash:'dashboard',bookings:'bookings',payreview:'payment_review',reports:'reports',courts:'courts',accounts:'accounts',blocked:'open_play',hosts:'host_open_play',gamemgr:'open_play',maintenance:'maintenance',payments:'payments',notifications:'settings',remittances:'remittances'};
+const SECTION_LOADERS={dash:renderDash,bookings:renderBookings,payreview:renderPaymentReview,reports:renderReport,courts:renderCourts,accounts:renderAccounts,blocked:renderBlocked,hosts:renderHostCenter,gamemgr:renderGameManager,maintenance:renderMaintenance,payments:renderPaymentSettings,notifications:renderOwnerEmailNotifications,remittances:renderRemittances};
 let _curSection=null;
 async function goto(s){
   // Block navigation to sections the current role can't access
@@ -3744,7 +3787,7 @@ async function goto(s){
 let _admRtDebounce=null;
 let _admRtStarted=false, _admRtRendering=false, _admRtPending=false;
 const _admRtDirtyScopes=new Set();
-const _admRtManualSections=new Set(['maintenance','payments','courts','blocked','remittances','gamemgr']);
+const _admRtManualSections=new Set(['maintenance','payments','courts','blocked','remittances','gamemgr','notifications']);
 const _admRtScopes={
   bookings:['bookings'], courts:['courts'], settings:['settings'],
   blocked_dates:['blockedDates'],
@@ -6570,6 +6613,199 @@ async function savePricingTiers() {
 /* ==============================================
    PAYMENT SETTINGS
    ============================================== */
+/* OWNER EMAIL NOTIFICATIONS */
+let _ownerEmailSaved = null, _ownerEmailBusy = false, _ownerEmailLoading = false;
+let _ownerEmailLoadSeq = 0, _ownerEmailHistoryBusy = false;
+let _ownerEmailSaveUncertain = false;
+
+function ownerEmailNormalizePreferences(row = {}) {
+  return {
+    emails: Array.isArray(row.emails) ? row.emails.map(email => String(email).trim()).filter(Boolean) : [],
+    enabled: row.enabled === true,
+    notify_new: row.notify_new !== false,
+    notify_pending: row.notify_pending !== false,
+  };
+}
+function ownerEmailDraft() {
+  return {
+    emails: $('ownerEmailRecipients').value.split(/\r?\n/).map(email => email.trim()).filter(Boolean),
+    enabled: $('ownerEmailEnabled').checked,
+    notify_new: $('ownerEmailNew').checked,
+    notify_pending: $('ownerEmailPending').checked,
+  };
+}
+function ownerEmailIsDirty() {
+  return !_ownerEmailSaved || JSON.stringify(ownerEmailDraft()) !== JSON.stringify(_ownerEmailSaved);
+}
+function ownerEmailValidationMessage(draft) {
+  if (draft.emails.length > 3) return 'Use one primary email and no more than two backup emails.';
+  if (draft.emails.some(email => email.length > 254 || !/^[^\s@,;<>]+@[^\s@,;<>]+\.[^\s@,;<>]+$/.test(email))) return 'Enter a valid email address on each line.';
+  if (new Set(draft.emails.map(email => email.toLowerCase())).size !== draft.emails.length) return 'Use each email address only once.';
+  if (draft.enabled && !draft.emails.length) return 'Add your primary email before enabling notifications.';
+  if (draft.enabled && !draft.notify_new && !draft.notify_pending) return 'Choose at least one booking update before enabling notifications.';
+  return '';
+}
+function ownerEmailFeedback(message, isError = false) {
+  const el = $('ownerEmailFeedback');
+  el.setAttribute('role', isError ? 'alert' : 'status');
+  el.setAttribute('aria-live', isError ? 'assertive' : 'polite');
+  el.style.color = isError ? 'var(--red)' : 'var(--text2)';
+  el.textContent = message;
+}
+function ownerEmailUpdateControls() {
+  $('ownerEmailFields').disabled = _ownerEmailBusy || _ownerEmailLoading || _ownerEmailSaveUncertain || !_ownerEmailSaved;
+  $('ownerEmailTest').disabled = _ownerEmailBusy || _ownerEmailLoading || _ownerEmailSaveUncertain || !_ownerEmailSaved?.emails.length || ownerEmailIsDirty();
+  $('ownerEmailReload').hidden = !_ownerEmailSaveUncertain;
+  $('ownerEmailReload').style.display = _ownerEmailSaveUncertain ? '' : 'none';
+  $('ownerEmailReload').disabled = _ownerEmailBusy || _ownerEmailLoading;
+  $('ownerEmailSavedStatus').textContent = _ownerEmailSaved
+    ? `${_ownerEmailSaved.enabled ? 'Notifications enabled' : 'Notifications disabled'} · ${_ownerEmailSaved.emails.length} saved email address${_ownerEmailSaved.emails.length === 1 ? '' : 'es'}.`
+    : _ownerEmailLoading ? 'Loading your saved settings…' : 'Settings have not loaded. Retry this section.';
+}
+function ownerEmailApplyPreferences(row) {
+  _ownerEmailSaved = ownerEmailNormalizePreferences(row);
+  _ownerEmailSaveUncertain = false;
+  $('ownerEmailRecipients').value = _ownerEmailSaved.emails.join('\n');
+  $('ownerEmailEnabled').checked = _ownerEmailSaved.enabled;
+  $('ownerEmailNew').checked = _ownerEmailSaved.notify_new;
+  $('ownerEmailPending').checked = _ownerEmailSaved.notify_pending;
+}
+function ownerEmailFormChanged() {
+  if (_ownerEmailSaveUncertain) return;
+  ownerEmailFeedback(ownerEmailIsDirty()
+    ? 'Unsaved changes. Save settings before sending a test email.'
+    : 'No unsaved changes. Test emails use your saved addresses.');
+  ownerEmailUpdateControls();
+}
+async function renderOwnerEmailNotifications() {
+  if (!Auth.can('settings', sess.role)) return;
+  const seq = ++_ownerEmailLoadSeq;
+  _ownerEmailSaved = null;
+  _ownerEmailLoading = true;
+  ownerEmailFeedback('');
+  ownerEmailUpdateControls();
+  try {
+    const preferences = await DB.getOwnerEmailPreferences();
+    if (seq !== _ownerEmailLoadSeq) return;
+    ownerEmailApplyPreferences(preferences || {});
+    ownerEmailFeedback(_ownerEmailSaved.emails.length
+      ? 'Test emails go to your saved addresses, even when booking alerts are disabled.'
+      : 'Add your email addresses and save settings to send a test email.');
+    await refreshOwnerEmailHistory();
+  } catch (error) {
+    if (seq === _ownerEmailLoadSeq) ownerEmailFeedback('Could not load your email notification settings. Please retry this section.', true);
+    throw error;
+  } finally {
+    if (seq === _ownerEmailLoadSeq) {
+      _ownerEmailLoading = false;
+      ownerEmailUpdateControls();
+    }
+  }
+}
+async function reloadOwnerEmailPreferences() {
+  if (_ownerEmailBusy || _ownerEmailLoading) return;
+  try { await renderOwnerEmailNotifications(); }
+  catch (_) { /* The section already displays its read error and keeps Reload available. */ }
+}
+async function saveOwnerEmailPreferences(event) {
+  event?.preventDefault();
+  if (!Auth.can('settings', sess.role) || _ownerEmailBusy || _ownerEmailLoading || _ownerEmailSaveUncertain || !_ownerEmailSaved) return;
+  const draft = ownerEmailDraft();
+  const validation = ownerEmailValidationMessage(draft);
+  if (validation) { ownerEmailFeedback(validation, true); return; }
+  _ownerEmailBusy = true;
+  $('ownerEmailSave').textContent = 'Saving…';
+  ownerEmailFeedback('Saving your settings…');
+  ownerEmailUpdateControls();
+  try {
+    const saved = await DB.saveOwnerEmailPreferences(draft);
+    ownerEmailApplyPreferences(Array.isArray(saved?.emails) ? saved : draft);
+    ownerEmailFeedback('Email notification settings saved.');
+  } catch (error) {
+    _ownerEmailSaveUncertain = error?.code === 'OWNER_EMAIL_SAVE_UNCERTAIN';
+    ownerEmailFeedback(_ownerEmailSaveUncertain
+      ? 'The save response was interrupted. Your settings may already have been saved. Reload saved settings before trying again.'
+      : 'Could not save your settings. Your changes are still here; please try again.', true);
+  } finally {
+    _ownerEmailBusy = false;
+    $('ownerEmailSave').textContent = 'Save settings';
+    ownerEmailUpdateControls();
+  }
+}
+async function sendOwnerEmailTest() {
+  if (!Auth.can('settings', sess.role) || _ownerEmailBusy || _ownerEmailLoading || _ownerEmailSaveUncertain) return;
+  if (!_ownerEmailSaved || ownerEmailIsDirty()) {
+    ownerEmailFeedback('Save your changes before sending a test email.', true);
+    return;
+  }
+  if (!_ownerEmailSaved.emails.length) {
+    ownerEmailFeedback('Add an email address and save settings before sending a test.', true);
+    return;
+  }
+  _ownerEmailBusy = true;
+  $('ownerEmailTest').textContent = 'Requesting test…';
+  ownerEmailFeedback('Requesting a test email to your saved addresses…');
+  ownerEmailUpdateControls();
+  try {
+    const result = await DB.sendOwnerEmailTest();
+    if (result?.status === 'failed' || result?.ok === false) {
+      ownerEmailFeedback('The test email could not be sent. Check your saved addresses and try again.', true);
+    } else if (result?.status === 'skipped') {
+      ownerEmailFeedback('No test email was sent. Check your saved addresses and try again.', true);
+    } else if (result?.status === 'sent') {
+      ownerEmailFeedback('Test email accepted by the email provider. Check your saved inboxes and spam folders.');
+    } else {
+      ownerEmailFeedback('Test email requested. Refresh delivery history to check its progress.');
+    }
+    await refreshOwnerEmailHistory();
+  } catch (error) {
+    const uncertain = error?.name === 'AbortError' || /timed out|delivery outcome may be unknown/i.test(error?.message || '');
+    ownerEmailFeedback(uncertain
+      ? 'The test response was interrupted. The email may still have been sent. Check your saved inboxes and spam folders before sending another test.'
+      : 'Could not request the test email. Please try again.', true);
+  } finally {
+    _ownerEmailBusy = false;
+    $('ownerEmailTest').textContent = 'Send Test Email';
+    ownerEmailUpdateControls();
+  }
+}
+function ownerEmailLogHtml(rows) {
+  const eventNames = { new: 'New booking', new_booking: 'New booking', pending: 'Payment review needed', booking_pending: 'Payment review needed', payment_review_needed: 'Payment review needed', test: 'Test email' };
+  const statusNames = { pending: 'Pending', sending: 'Sending', sent: 'Sent', failed: 'Failed', skipped: 'Skipped' };
+  const descriptions = { pending: 'Waiting to send.', sending: 'Delivery is in progress.', sent: 'Accepted by the email provider.', failed: 'Could not send this message. Check your saved addresses or try a test email.', skipped: 'No email was sent for this update.' };
+  if (!rows.length) return '<p style="color:var(--text2);font-size:.84rem">No delivery history yet. Save your addresses and use Send Test Email to check them.</p>';
+  return rows.slice(0, 30).map(row => {
+    const status = row.status === 'queued' ? 'pending' : Object.prototype.hasOwnProperty.call(statusNames, row.status) ? row.status : '';
+    const date = new Date(row.sent_at || row.created_at || '');
+    const when = Number.isFinite(date.getTime()) ? date.toLocaleString('en-PH', { timeZone: 'Asia/Manila', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true }) + ' Manila' : 'Time unavailable';
+    const attempts = Math.max(0, Math.floor(Number(row.attempts) || 0));
+    return `<article class="integration-card ${status === 'sent' ? 'ok' : 'warn'}">
+      <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap"><strong style="font-size:.85rem">${esc(eventNames[row.event] || 'Booking update')}</strong><span class="integration-badge ${status === 'sent' ? 'ok' : 'warn'}">${esc(statusNames[status] || 'Unknown')}</span></div>
+      <p style="font-size:.78rem;color:var(--text2);margin-top:6px">${esc(when)} · ${attempts} attempt${attempts === 1 ? '' : 's'}</p>
+      <p style="font-size:.8rem;color:var(--text2);margin-top:5px">${esc(descriptions[status] || 'Refresh history to check delivery progress.')}</p>
+    </article>`;
+  }).join('');
+}
+async function refreshOwnerEmailHistory() {
+  if (!Auth.can('settings', sess.role) || _ownerEmailHistoryBusy) return;
+  _ownerEmailHistoryBusy = true;
+  const body = $('ownerEmailHistory'), button = $('ownerEmailHistoryRefresh');
+  button.disabled = true;
+  body.setAttribute('aria-busy', 'true');
+  try {
+    const rows = await DB.getOwnerEmailNotificationLog();
+    if (!Array.isArray(rows)) throw new Error('Delivery history unavailable');
+    body.innerHTML = ownerEmailLogHtml(rows);
+  } catch (_) {
+    body.innerHTML = '<p role="alert" style="color:var(--red);font-size:.84rem">Could not load delivery history. Use Refresh history to try again.</p>';
+  } finally {
+    _ownerEmailHistoryBusy = false;
+    button.disabled = false;
+    body.setAttribute('aria-busy', 'false');
+  }
+}
+/* END OWNER EMAIL NOTIFICATIONS */
+
 async function renderIntegrationStatus() {
   const body = $('integrationStatusBody');
   if (!body) return;
@@ -9307,6 +9543,6 @@ async function checkAgreementGate(session) {
 </script>
 
 <script src="supabase.min.js"></script>
-<script src="supabase-config.js?v=20261017-refresh"></script>
+<script src="supabase-config.js?v=20261017-owner-email"></script>
 </body>
 </html>

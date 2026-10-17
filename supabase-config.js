@@ -295,34 +295,6 @@ function _openPlayEmailPayload(r) {
   };
 }
 
-function _telegramBookingPayload(b, extras = {}) {
-  const items = Array.isArray(b.groupItems) && b.groupItems.length ? b.groupItems : [];
-  return {
-    bookingRef: b.ref,
-    fullName: b.fullName,
-    contactNumber: b.contactNumber,
-    courtName: b.courtName,
-    date: b.date,
-    startTime: b.startTime,
-    endTime: b.endTime,
-    duration: b.duration,
-    total: b.total,
-    downpayment: b.downpayment || Math.round((b.total || 0) * 0.5),
-    playerCount: b.playerCount ?? null,
-    playerSummary: items.length > 1
-      ? items.map(item => `${item.courtName}: ${item.playerCount ?? '?'}`).join(' | ')
-      : '',
-    extraPlayerFee: items.length
-      ? items.reduce((sum, item) => sum + Number(item.extraPlayerFee || 0), 0)
-      : Number(b.extraPlayerFee || 0),
-    paymentMethod: b.paymentMethod,
-    paymentStatus: b.paymentStatus,
-    bookingStatus: b.status,
-    gcashRef: b.gcashRef || null,
-    ...extras,
-  };
-}
-
 // =============================================
 // ROW ↔ JS OBJECT MAPPING
 // SQL uses snake_case; JS objects use camelCase
@@ -1291,20 +1263,64 @@ window.DB = {
     });
   },
 
-  async sendTelegramNotification(payload, options = {}) {
-    return _invokeEdgeFunction('send-telegram-notification', payload, {
-      allowFailure: options.allowFailure !== false,
-    });
+  // Booking INSERT/UPDATE triggers queue owner alerts transactionally. Keep these
+  // compatibility hooks harmless; closing a browser must not lose notifications.
+  async notifyBookingSubmitted() { return { ok: true, handledByDatabase: true }; },
+  async notifyBookingUpdate() { return { ok: true, handledByDatabase: true }; },
+
+  async getOwnerEmailPreferences() {
+    const { data: authData, error: authError } = await _withTimeout(_sb.auth.getUser(), 15000, 'Sign-in check');
+    if (authError || !authData?.user) throw authError || new Error('Please sign in again.');
+    const { data, error } = await _withTimeout(_sb.from('owner_email_preferences').select('emails,enabled,notify_new,notify_pending,updated_at').eq('user_id', authData.user.id).maybeSingle(), 15000, 'Email settings');
+    if (error) throw error;
+    return data || { emails: [], enabled: false, notify_new: true, notify_pending: true };
   },
 
-  async notifyBookingSubmitted(booking) {
-    if (window.PB_USE_LOCAL_DATA) return { ok: true, skipped: true, reason: 'Local data mode' };
-    return this.sendTelegramNotification(_telegramBookingPayload(booking, { event: 'new_booking' }), { allowFailure: true });
+  async saveOwnerEmailPreferences(preferences) {
+    const emails = [...new Set((preferences.emails || []).map(email => String(email).trim().toLowerCase()).filter(Boolean))];
+    if (emails.length > 3 || emails.some(email => email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) throw new Error('Enter up to three valid email addresses.');
+    const enabled = !!preferences.enabled;
+    const events = { notify_new: !!preferences.notify_new, notify_pending: !!preferences.notify_pending };
+    if (enabled && (!emails.length || !Object.values(events).some(Boolean))) throw new Error('Choose an email address and at least one alert type.');
+    const { data: authData, error: authError } = await _withTimeout(_sb.auth.getUser(), 15000, 'Sign-in check');
+    if (authError || !authData?.user) throw authError || new Error('Please sign in again.');
+    try {
+      const { data, error } = await _withTimeout(_sb.from('owner_email_preferences').upsert({ user_id: authData.user.id, emails, enabled, ...events }).select('emails,enabled,notify_new,notify_pending,updated_at').single(), 15000, 'Saving email settings');
+      if (error) throw error;
+      return data;
+    } catch (error) {
+      const message = error?.message || '';
+      const uncertainTransport = ['TypeError', 'AbortError'].includes(error?.name)
+        || (!error?.code && /timed\s*out|timeout|fetch|network|abort/i.test(message));
+      if (uncertainTransport) {
+        const uncertain = new Error('Saving could not be confirmed. The result is unknown; reload saved settings before trying again.');
+        uncertain.code = 'OWNER_EMAIL_SAVE_UNCERTAIN';
+        throw uncertain;
+      }
+      throw error;
+    }
   },
 
-  async notifyBookingUpdate(booking, event, note = '') {
-    if (window.PB_USE_LOCAL_DATA) return { ok: true, skipped: true, reason: 'Local data mode' };
-    return this.sendTelegramNotification(_telegramBookingPayload(booking, { type: 'booking_update', event, note }), { allowFailure: true });
+  async getOwnerEmailNotificationLog() {
+    const { data, error } = await _withTimeout(_sb.rpc('get_owner_email_notification_log', {}, { get: true }), 15000, 'Email delivery history');
+    if (error) throw error;
+    return Array.isArray(data) ? data : [];
+  },
+
+  async sendOwnerEmailTest() {
+    const { data, error } = await _withTimeout(_sb.auth.getSession(), PB_EDGE_REQUEST_TIMEOUT_MS, 'Sign-in check');
+    if (error || !data?.session?.access_token) throw error || new Error('Please sign in again.');
+    // A user-requested test is a send, so do not retry an uncertain response.
+    return _withTimeout((async () => {
+    const response = await _fetchWithTimeout(`${SUPABASE_URL}/functions/v1/owner-email-notifications`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${data.session.access_token}` },
+      body: JSON.stringify({ action: 'test' }),
+    }, 25000);
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || result.ok === false) throw new Error(result.error || 'Could not request the test email. Check the delivery history before trying again.');
+    return result;
+    })(), 25000, 'Test email request (delivery outcome may be unknown)');
   },
 
   async getIntegrationStatus() {
@@ -2332,9 +2348,19 @@ window.DB = {
     async sendConfirmationSms() { return { ok: true, skipped: true, reason: 'Local data mode' }; },
     async sendOpenPlayConfirmationEmail() { return { ok: true, skipped: true, reason: 'Local data mode' }; },
     async sendRescheduleEmail() { return { ok: true, skipped: true, reason: 'Local data mode' }; },
-    async sendTelegramNotification() { return { ok: true, skipped: true, reason: 'Local data mode' }; },
     async notifyBookingSubmitted() { return { ok: true, skipped: true, reason: 'Local data mode' }; },
     async notifyBookingUpdate() { return { ok: true, skipped: true, reason: 'Local data mode' }; },
+    async getOwnerEmailPreferences() {
+      return readDb().ownerEmailPreferences || { emails: [], enabled: false, notify_new: true, notify_pending: true };
+    },
+    async saveOwnerEmailPreferences(preferences) {
+      const db = readDb();
+      db.ownerEmailPreferences = { ...preferences, updated_at: new Date().toISOString() };
+      writeDb(db);
+      return db.ownerEmailPreferences;
+    },
+    async getOwnerEmailNotificationLog() { return []; },
+    async sendOwnerEmailTest() { return { ok: true, status: 'skipped', message: 'Demo mode: no email was sent.' }; },
     async getIntegrationStatus() {
       return {
         ok: true,
@@ -2342,7 +2368,7 @@ window.DB = {
         services: [
           { id: 'email', label: 'Email confirmations', configured: false, required: ['RESEND_API_KEY'], missing: ['RESEND_API_KEY'], note: 'Local data mode' },
           { id: 'sms', label: 'SMS confirmations', configured: false, required: ['SMS_API_PH_API_KEY'], missing: ['SMS_API_PH_API_KEY'], note: 'Local data mode' },
-          { id: 'telegram', label: 'Telegram admin alerts', configured: false, required: ['TELEGRAM_BOT_TOKEN', 'TELEGRAM_CHAT_ID'], missing: ['TELEGRAM_BOT_TOKEN', 'TELEGRAM_CHAT_ID'], note: 'Local data mode' },
+          { id: 'owner_email', label: 'Owner email alerts', configured: false, required: ['RESEND_API_KEY', 'EMAIL_FROM', 'OWNER_NOTIFICATION_WORKER_SECRET'], missing: [], note: 'Local demo: no email is sent.' },
           { id: 'payments', label: 'PayMongo checkout', configured: false, required: ['PAYMONGO_SECRET_KEY', 'PAYMENT_SUCCESS_URL', 'PAYMENT_CANCEL_URL'], missing: ['PAYMONGO_SECRET_KEY', 'PAYMENT_SUCCESS_URL', 'PAYMENT_CANCEL_URL'], note: 'Local data mode' },
           { id: 'ocr', label: 'Receipt OCR', configured: false, required: ['GOOGLE_VISION_API_KEY or OCRSPACE_API_KEY'], missing: ['GOOGLE_VISION_API_KEY or OCRSPACE_API_KEY'], note: 'Local data mode' },
           { id: 'service_role', label: 'Server database access', configured: false, required: ['SERVICE_ROLE_KEY or SUPABASE_SERVICE_ROLE_KEY'], missing: ['SERVICE_ROLE_KEY or SUPABASE_SERVICE_ROLE_KEY'], note: 'Local data mode' },

@@ -55,10 +55,7 @@ Add-SecretArg "SMS_API_PH_API_KEY" $envMap["SMS_API_PH_API_KEY"]
 Add-SecretArg "APP_ADMIN_URL" $envMap["APP_ADMIN_URL"]
 Add-SecretArg "APP_LOGO_URL" $envMap["APP_LOGO_URL"]
 Add-SecretArg "APP_LOCATION" $envMap["APP_LOCATION"]
-Add-SecretArg "TELEGRAM_BOT_TOKEN" $envMap["TELEGRAM_BOT_TOKEN"]
-Add-SecretArg "TELEGRAM_CHAT_ID" $envMap["TELEGRAM_CHAT_ID"]
-Add-SecretArg "TELEGRAM_WEBHOOK_SECRET" $envMap["TELEGRAM_WEBHOOK_SECRET"]
-Add-SecretArg "TELEGRAM_REGISTRATION_CODE" $envMap["TELEGRAM_REGISTRATION_CODE"]
+Add-SecretArg "OWNER_NOTIFICATION_WORKER_SECRET" $envMap["OWNER_NOTIFICATION_WORKER_SECRET"]
 Add-SecretArg "GOOGLE_VISION_API_KEY" $envMap["GOOGLE_VISION_API_KEY"]
 Add-SecretArg "OCRSPACE_API_KEY" $envMap["OCRSPACE_API_KEY"]
 
@@ -74,6 +71,8 @@ npx supabase functions deploy manage-account --no-verify-jwt
 npx supabase functions deploy send-confirmation-email --no-verify-jwt
 npx supabase functions deploy send-confirmation-sms --no-verify-jwt
 npx supabase functions deploy send-reschedule-email --no-verify-jwt
+npx supabase functions deploy owner-email-notifications --no-verify-jwt
+# Keep retired endpoint deployments: cached older pages must not send Telegram alerts.
 npx supabase functions deploy send-telegram-notification --no-verify-jwt
 npx supabase functions deploy telegram-webhook --no-verify-jwt
 npx supabase functions deploy integration-status --no-verify-jwt

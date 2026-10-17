@@ -1368,7 +1368,8 @@ window.DB = {
 
   // Check if user has accepted the current agreement version
   async getAgreement(userId, version = 1) {
-    const { data } = await _sb.from('agreements').select('id, full_name, agreed_at').eq('user_id', userId).eq('version', version).maybeSingle();
+    const { data, error } = await _sb.from('agreements').select('id, full_name, agreed_at').eq('user_id', userId).eq('version', version).maybeSingle();
+    if (error) throw error;
     return data || null;
   },
 
@@ -1393,8 +1394,9 @@ window.DB = {
   // proof attempts, and audit events are committed in one database transaction.
   async getBookingFeeRemittanceDashboard() {
     const [dashboardResult, historyResult, legacyResult] = await Promise.all([
-      _sb.rpc('get_booking_fee_remittance_dashboard'),
-      _sb.rpc('get_booking_fee_remittance_history', { p_limit: 100, p_before: null }),
+      // These STABLE functions use GET so the read deadline aborts stalled requests.
+      _sb.rpc('get_booking_fee_remittance_dashboard', {}, { get: true }),
+      _sb.rpc('get_booking_fee_remittance_history', { p_limit: 100 }, { get: true }),
       _sb.from('weekly_fees')
         .select('id,court_owner_email,week_start,week_end,bookings_count,fee_per_booking,amount_due,status,billed_refs,generated_at,sent_at,due_at,paid_at,paid_ref,paid_note,paid_by_user_id')
         .eq('status', 'paid')
@@ -1460,8 +1462,9 @@ window.DB = {
   async getBookingFeeRemittanceHistory({ limit = 30, before = null } = {}) {
     const { data, error } = await _sb.rpc('get_booking_fee_remittance_history', {
       p_limit: Math.max(1, Math.min(100, Number(limit) || 30)),
-      p_before: before || null,
-    });
+      // Omit an absent cursor to use SQL's NULL default; GET would stringify null.
+      ...(before ? { p_before: before } : {}),
+    }, { get: true });
     if (error) throw new Error(_extractFnError(error, 'Could not load remittance history'));
     return Array.isArray(data) ? data : (data || []);
   },
@@ -1469,7 +1472,7 @@ window.DB = {
   async getBookingFeeRemittanceDetail(remittanceId) {
     const { data, error } = await _sb.rpc('get_booking_fee_remittance_detail', {
       p_remittance_id: remittanceId,
-    });
+    }, { get: true });
     if (error) throw new Error(_extractFnError(error, 'Could not load remittance details'));
     return data || null;
   },

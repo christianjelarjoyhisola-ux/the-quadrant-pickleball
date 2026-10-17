@@ -2,7 +2,7 @@
   "name": "the-quadrant-pickleball",
   "private": true,
   "scripts": {
-    "check:reliability": "node tools/audit-reliability.mjs",
+    "check:reliability": "node tools/audit-reliability.mjs && node tools/check-admin-refresh.mjs && node tools/check-backend-read-deadlines.mjs",
     "check:js": "node --check supabase-config.js && node --check auth.js && node --check admin.js && node --check script.js && node --check create-accounts.js && node --check setup-db.js && node --check _worker.js",
     "check:pricing": "node tools/check-extra-player-pricing.mjs",
     "check:security": "node tools/check-booking-rls.mjs && node tools/check-court-lifecycle.mjs",

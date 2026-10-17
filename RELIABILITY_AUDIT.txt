@@ -1,3 +1,81 @@
+HOSTING AND COURT-OWNER FOLLOW-UP — 17 October 2026 (Asia/Manila)
+Three specialist reviews covered Cloudflare, Supabase, and court-owner/browser
+behavior. Authenticated provider dashboards were also inspected. The exact
+browser-level termination remains unproven; healthy HTTP responses do not rule
+out a browser memory problem, device/network failure, or intermittent defect.
+
+VERIFIED HOSTING EVIDENCE
+- Cloudflare: production deployment 1ca5b184 served commit 82cb42a; both domain
+  certificates active. Thirty read-only route checks returned HTTP 200. Short
+  deployment error-tail observation showed no errors.
+- Cloudflare domain analytics, last 24 hours: 1,007 requests, 583 2xx, 415 3xx,
+  nine 4xx, zero 5xx. Five Bot Fight Mode managed challenges came from one
+  Australian address and targeted /, /xmlrpc.php, /feed/, /wp-login.php and
+  /wp-json/. No admin path appeared among challenged requests. This does not
+  establish whether any individual user ever received a challenge.
+- Cloudflare browser cache TTL is four hours, Standard caching. Versioned
+  JavaScript matches the checked-out release, but deployments must change the
+  query version to avoid retaining old scripts. Under Attack Mode is off.
+  JavaScript Detection injection is present; no evidence links it to the crash.
+- Supabase project mjwmvlhzjkaduwdtfwiu: Healthy, Singapore Nano compute;
+  observed CPU 2%, RAM 50%, disk 17%, 7/60 database connections. Database size
+  30.74 MB. Twenty-four-hour memory charts showed a broadly steady profile;
+  several detailed I/O/connection charts were unavailable.
+- Supabase organization usage, current Sep 25-Oct 25 cycle: no quota exceeded;
+  egress 2.961/5 GB, storage 0.238/1 GB, peak realtime connections 11/200,
+  Edge Function invocations 16,965/500,000. These are organization totals.
+- Supabase unified logs, last 24 hours: 648 success/2xx entries, two warning/4xx
+  entries, zero error/5xx entries. The two warnings correspond to this audit's
+  two unsuccessful logins using stale local credentials, not a proven user
+  failure. Provider log classification is not a complete browser crash history.
+- PostgreSQL "unexpected EOF on standby connection" entries at 11:06:09,
+  11:24:24 and 14:07:32 on Oct 17 match Realtime logs at the same times saying
+  there are no connected users and terminating the tenant with :shutdown.
+  These correlated examples are idle connection shutdowns, not database crashes.
+- Eighteen direct API checks returned 200 in 88-676 ms. Full booking read:
+  144 rows, 313,724 bytes, 1.18 seconds. Maintenance read: one valid rule,
+  715 bytes, roughly 79-156 ms. Whole settings read: 232,160 bytes, mostly a
+  227,648-character QR image. Current payload sizes do not prove memory failure.
+
+CONFIRMED APPLICATION DEFECTS AND TARGETED REPAIRS
+- Offline reproduction: 20 realtime events could create 20 pending admin
+  renders and global cache invalidations, including while hidden. Refreshes
+  now coalesce and serialize, pause while hidden, and invalidate affected caches.
+  Sections with unsaved inline forms reload on explicit navigation/save rather
+  than background events; blur cannot overwrite an unsaved rule or due date.
+- Five concurrent housekeeping calls over ten eligible bookings produced 50
+  writes instead of ten. A shared in-flight batch now limits concurrency to
+  three writes and waits for all workers before releasing the guard.
+- Agreement query errors were treated as unsigned agreements only for court
+  owners. Errors now reach the existing retry screen instead of the signing gate.
+- Read-only remittance RPCs lacked the GET/HEAD request deadline. The three
+  STABLE read functions now use GET and the existing 15-second abort deadline;
+  mutation requests remain POST. Absent history cursors use SQL NULL defaults.
+- New offline behavioral checks cover refresh overlap, hidden tabs, editing
+  guards, duplicate writes, error recovery, actual request cancellation and
+  unchanged mutation behavior. They use mocks and perform no live writes.
+- Validation: npm run launch:check passed; updated refresh regressions passed
+  after review corrections. Local Chrome Dashboard, Maintenance and Remittances
+  loaded with no captured browser warning/error. Demo smoke checks do not prove
+  production permissions or Safari stability.
+
+SEPARATE UNRESOLVED FINDINGS
+- Public anonymous API access returns complete booking records, including
+  customer contact and receipt-extraction fields. No private row contents were
+  retained in this report. Replace public full-row access with restricted
+  availability and authenticated lookup interfaces in a coordinated migration.
+  This verified security issue is not a demonstrated crash cause.
+- Unpaginated booking history and retained desktop/mobile DOM (~15,080 elements
+  in the prior live admin check) remain performance risks as history grows.
+- Existing public realtime/payment polling overlap and payment ordering/atomicity
+  risks in the original audit remain. No payment or booking writes were tested.
+- Local management tokens lack required project/zone permissions and configured
+  court-owner login credentials were invalid. Dashboard access filled the hosting
+  evidence gap, but the affected court-owner session and actual Safari renderer
+  still need a captured failure to identify the precise reported crash.
+
+The original audit below is historical; later repair notes supersede it.
+
 RELEASE UPDATE — 16 October 2026
 Frontend fixes now address findings 1–7, bounded read/startup recovery, removal of
 public startup cleanup, Maintenance-only settings reads, and dashboard Manila date.

@@ -3718,6 +3718,10 @@ async function goto(s){
   const panel = $('sec-'+s);
   panel.querySelector('.section-load-error')?.remove();
   try {
+    // Explicit navigation may reload forms; background events must not do so.
+    invalidateAdminRefreshCaches();
+    _admRtPending=false;
+    scheduleAdminRefresh();
     if(SECTION_LOADERS[s]) await SECTION_LOADERS[s]();
   } catch (error) {
     console.error('Section load failed:', error);
@@ -3738,22 +3742,64 @@ async function goto(s){
    REALTIME — keep the admin dashboard live (no manual refresh)
    ============================================== */
 let _admRtDebounce=null;
+let _admRtStarted=false, _admRtRendering=false, _admRtPending=false;
+const _admRtDirtyScopes=new Set();
+const _admRtManualSections=new Set(['maintenance','payments','courts','blocked','remittances','gamemgr']);
+const _admRtScopes={
+  bookings:['bookings'], courts:['courts'], settings:['settings'],
+  blocked_dates:['blockedDates'],
+  open_play_registrations:['openPlayRegistrations','openPlayCount','openPlayCounts'],
+};
+function invalidateAdminRefreshCaches(){
+  const scopes=[..._admRtDirtyScopes];
+  _admRtDirtyScopes.clear();
+  if(scopes.length && DB.clearCache) DB.clearCache(scopes);
+}
+function scheduleAdminRefresh(delay=300){
+  clearTimeout(_admRtDebounce);
+  _admRtDebounce=null;
+  // These sections contain unsaved inline forms. Losing focus is not a save.
+  // Invalidate reads for the next navigation without replacing the current form.
+  if(_admRtManualSections.has(_curSection)){
+    invalidateAdminRefreshCaches();
+    _admRtPending=false;
+    return;
+  }
+  if(!_admRtPending || _admRtRendering || document.visibilityState==='hidden') return;
+  _admRtDebounce=setTimeout(flushAdminRefresh,delay);
+}
+async function flushAdminRefresh(){
+  _admRtDebounce=null;
+  if(_admRtManualSections.has(_curSection)){ scheduleAdminRefresh(); return; }
+  if(!_admRtPending || _admRtRendering || document.visibilityState==='hidden') return;
+  // Retain the update until the admin leaves the form or closes the modal.
+  const ae=document.activeElement;
+  if((ae && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)) || document.querySelector('.overlay.show')){
+    scheduleAdminRefresh(1000);
+    return;
+  }
+  _admRtPending=false;
+  _admRtRendering=true;
+  try{
+    invalidateAdminRefreshCaches();
+    if(_curSection && SECTION_LOADERS[_curSection]) await SECTION_LOADERS[_curSection]();
+  }catch(error){
+    console.warn('Admin refresh failed:',error);
+  }finally{
+    _admRtRendering=false;
+    scheduleAdminRefresh();
+  }
+}
 function startAdminRealtime(){
-  if (window.PB_USE_LOCAL_DATA) return;
-  const rerender=()=>{
-    clearTimeout(_admRtDebounce);
-    _admRtDebounce=setTimeout(async ()=>{
-      // Never clobber a form the admin is actively editing (e.g. payment settings).
-      const ae=document.activeElement;
-      if(ae && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName)) return;
-      // Don't yank content out from under an open modal dialog.
-      if(document.querySelector('.overlay.show')) return;
-      try{
-        if (DB.clearCache) DB.clearCache();
-        if(_curSection && SECTION_LOADERS[_curSection]) await SECTION_LOADERS[_curSection]();
-      }catch(_){}
-    },300);
+  if (window.PB_USE_LOCAL_DATA || _admRtStarted) return;
+  _admRtStarted=true;
+  const rerender=payload=>{
+    for(const scope of _admRtScopes[payload?.table] || []) _admRtDirtyScopes.add(scope);
+    _admRtPending=true;
+    scheduleAdminRefresh();
   };
+  document.addEventListener('visibilitychange',()=>scheduleAdminRefresh());
+  document.addEventListener('focusout',()=>scheduleAdminRefresh());
   _supabase.channel('admin-rt')
     .on('postgres_changes',{event:'*',schema:'public',table:'bookings'},rerender)
     .on('postgres_changes',{event:'*',schema:'public',table:'courts'},rerender)
@@ -4017,27 +4063,40 @@ function renderDashCharts(bookings) {
    BOOKINGS
    ============================================== */
 let autoCompleteRan = false;
+let autoCompletePromise = null;
 async function autoCompleteBookings(bks) {
-  if (autoCompleteRan) return;
-  const now = new Date();
-  const toComplete = bks.filter(b => {
-    if (b.status !== 'confirmed') return false;
-    if (!b.date || !b.endTime) return false;
-    const [time, period] = String(b.endTime).trim().split(/\s+/);
-    if (!time || !period) return false;
-    let [hh] = time.split(':').map(Number);
-    if (!Number.isFinite(hh)) return false;
-    if (period === 'PM' && hh !== 12) hh += 12;
-    if (period === 'AM' && hh === 12) hh = 0;
-    const endDt = new Date(`${b.date}T${String(hh).padStart(2,'0')}:00:00`);
-    if (Number.isNaN(endDt.getTime())) return false;
-    return (now - endDt) > 24 * 60 * 60 * 1000;
-  });
-  if (toComplete.length > 0) {
-    await Promise.all(toComplete.map(b => DB.updateBooking(b.ref, { status: 'completed' })));
-  }
-  autoCompleteRan = true;
-  return toComplete.length;
+  if (autoCompleteRan) return 0;
+  if (autoCompletePromise) return autoCompletePromise;
+  autoCompletePromise = Promise.resolve().then(async () => {
+    const now = new Date();
+    const toComplete = bks.filter(b => {
+      if (b.status !== 'confirmed') return false;
+      if (!b.date || !b.endTime) return false;
+      const [time, period] = String(b.endTime).trim().split(/\s+/);
+      if (!time || !period) return false;
+      let [hh] = time.split(':').map(Number);
+      if (!Number.isFinite(hh)) return false;
+      if (period === 'PM' && hh !== 12) hh += 12;
+      if (period === 'AM' && hh === 12) hh = 0;
+      const endDt = new Date(`${b.date}T${String(hh).padStart(2,'0')}:00:00`);
+      if (Number.isNaN(endDt.getTime())) return false;
+      return (now - endDt) > 24 * 60 * 60 * 1000;
+    });
+    let next = 0;
+    const workers = Array.from({ length: Math.min(3, toComplete.length) }, async () => {
+      while (next < toComplete.length) {
+        const booking = toComplete[next++];
+        await DB.updateBooking(booking.ref, { status: 'completed' });
+      }
+    });
+    // A failed worker must not unlock another batch while other writes still run.
+    const results = await Promise.allSettled(workers);
+    const failure = results.find(result => result.status === 'rejected');
+    if (failure) throw failure.reason;
+    autoCompleteRan = true;
+    return toComplete.length;
+  }).finally(() => { autoCompletePromise = null; });
+  return autoCompletePromise;
 }
 
 let _bookingRenderSeq = 0;
@@ -9221,10 +9280,8 @@ async function checkAgreementGate(session) {
   if (session.role !== 'court_owner') return false; // no gate
   // Skip on local dev
   if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') return false;
-  try {
-    const existing = await DB.getAgreement(session.id, AGREEMENT_VERSION);
-    if (existing) return false; // already signed
-  } catch(_) {}
+  const existing = await DB.getAgreement(session.id, AGREEMENT_VERSION);
+  if (existing) return false; // already signed
   // Show the gate
   await updateAgreementFeeCopy();
   const overlay = document.getElementById('agreementOverlay');
@@ -9250,6 +9307,6 @@ async function checkAgreementGate(session) {
 </script>
 
 <script src="supabase.min.js"></script>
-<script src="supabase-config.js?v=20261016-reliability"></script>
+<script src="supabase-config.js?v=20261017-refresh"></script>
 </body>
 </html>

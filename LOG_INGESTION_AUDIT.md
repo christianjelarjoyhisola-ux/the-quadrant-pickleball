@@ -66,6 +66,8 @@ References:
 
 The guarded scheduler was applied to project `mjwmvlhzjkaduwdtfwiu` through its authenticated dashboard and verified active, every minute, with the guard present and zero pending jobs. The complete `launch:check` suite passed, including production dependency audit (zero vulnerabilities).
 
-The frontend optimization is included in this release. `cron.log_statement` remains unchanged: the former deployment token expired and current CLI access returns HTTP 401. Completing that setting requires renewed Management API/CLI access and a database restart; neither was performed in this release.
+The frontend optimization is live at thequadrant.club (initial release commit `8c527c6`, Cloudflare deployment `0dad35eb`). Homepage, Admin, and Login returned HTTP 200; the deployment homepage matched the packaged file exactly.
+
+After explicit approval and renewed project-scoped access, `cron.log_statement=false` was applied through the Supabase CLI. The database restarted at 05:35:01 UTC (13:35:01 Manila) on 23 October 2026. Live `pg_settings` verification confirmed `cron.log_statement=off`, `cron.log_run=on`, `log_min_messages=warning`, and `log_lock_waits=on`, all with `pending_restart=false`. The guarded cron job remained active with zero pending jobs; public routes remained healthy. No other database settings were changed. The temporary access token expires after 24 hours and should be revoked after release verification.
 
 Drive D: had no free space. Release commits and packaging use a separate checkout on C:; the original workspace and unrelated user files remain intact. No other Supabase project is changed.

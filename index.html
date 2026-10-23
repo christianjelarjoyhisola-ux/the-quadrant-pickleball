@@ -8402,34 +8402,79 @@ function closeModal() {
    REAL-TIME — Supabase live updates
    ============================================= */
 let _rtDebounce = null;
+let _rtStarted = false, _rtRendering = false, _rtPending = false, _rtSubscribed = false;
+const _rtDirtyScopes = new Set();
+const _rtScopes = {
+  bookings: ['bookings'],
+  courts: ['courts'],
+  settings: ['settings'],
+  blocked_dates: ['blockedDates'],
+  open_play_registrations: ['openPlayRegistrations', 'openPlayCount', 'openPlayCounts'],
+};
 async function refreshLiveViews() {
-  const openDate = selectedCourtBrowseDate();
-
-  await loadOperatingHours();
-  sharedCourtDate = openDate;
+  // renderCourts already loads operating hours and reads the current browse date.
   await renderCourts();
 
-  // Keep the legacy wizard slot grid live too.
-  if (court && $('bDate').value) renderSlots();
+  // Keep the legacy wizard in the same refresh, rather than starting overlapping reads.
+  if (document.visibilityState !== 'hidden' && court && $('bDate')?.value) await renderSlots();
+}
+
+function scheduleLiveRefresh() {
+  if (document.visibilityState === 'hidden') {
+    clearTimeout(_rtDebounce);
+    _rtDebounce = null;
+    return;
+  }
+  if (!_rtPending || _rtRendering || _rtDebounce !== null) return;
+  // Keep the first timer so a continuous stream of events cannot postpone freshness.
+  _rtDebounce = setTimeout(flushLiveRefresh, 300);
+}
+
+function queueLiveRefresh(scopes) {
+  if (!scopes?.length) return;
+  for (const scope of scopes) _rtDirtyScopes.add(scope);
+  _rtPending = true;
+  scheduleLiveRefresh();
+}
+
+async function flushLiveRefresh() {
+  _rtDebounce = null;
+  if (!_rtPending || _rtRendering || document.visibilityState === 'hidden') return;
+  _rtPending = false;
+  _rtRendering = true;
+  const scopes = [..._rtDirtyScopes];
+  _rtDirtyScopes.clear();
+  try {
+    if (scopes.length && DB.clearCache) DB.clearCache(scopes);
+    await refreshLiveViews();
+  } catch (_) {
+    // Existing availability views show read failures; the next update can retry.
+  } finally {
+    _rtRendering = false;
+    scheduleLiveRefresh();
+  }
 }
 
 function startRealtime() {
-  if (window.PB_USE_LOCAL_DATA) return;
-  const onChange = () => {
-    // Debounce: a single booking can emit several row events in quick succession.
-    clearTimeout(_rtDebounce);
-    _rtDebounce = setTimeout(() => {
-      if (DB.clearCache) DB.clearCache();
-      refreshLiveViews().catch(() => {});
-    }, 120);
-  };
+  if (window.PB_USE_LOCAL_DATA || _rtStarted) return;
+  _rtStarted = true;
+  const onChange = payload => queueLiveRefresh(_rtScopes[payload?.table]);
+  const catchUp = () => queueLiveRefresh(Object.values(_rtScopes).flat());
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') scheduleLiveRefresh();
+    else catchUp(); // A suspended tab may have missed events while disconnected.
+  });
   _supabase.channel('public-rt')
     .on('postgres_changes', { event: '*', schema: 'public', table: 'bookings' }, onChange)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'courts' }, onChange)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'settings' }, onChange)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'blocked_dates' }, onChange)
     .on('postgres_changes', { event: '*', schema: 'public', table: 'open_play_registrations' }, onChange)
-    .subscribe();
+    .subscribe(status => {
+      if (status !== 'SUBSCRIBED') return;
+      if (_rtSubscribed) catchUp();
+      _rtSubscribed = true; // Initial data is already loaded before startRealtime.
+    });
 }
 
 /* =============================================

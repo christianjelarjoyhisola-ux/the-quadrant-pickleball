@@ -2,7 +2,7 @@
   "name": "the-quadrant-pickleball",
   "private": true,
   "scripts": {
-    "check:reliability": "node tools/audit-reliability.mjs && node tools/check-admin-refresh.mjs && node tools/check-backend-read-deadlines.mjs",
+    "check:reliability": "node tools/audit-reliability.mjs && node tools/check-admin-refresh.mjs && node tools/check-public-refresh.mjs && node tools/check-backend-read-deadlines.mjs",
     "check:js": "node --check supabase-config.js && node --check auth.js && node --check admin.js && node --check script.js && node --check create-accounts.js && node --check setup-db.js && node --check _worker.js",
     "check:pricing": "node tools/check-extra-player-pricing.mjs",
     "check:security": "node tools/check-booking-rls.mjs && node tools/check-court-lifecycle.mjs",
@@ -10,7 +10,7 @@
     "check:functions": "npx --yes deno check supabase/functions/create-payment-session/index.ts supabase/functions/payment-webhook/index.ts supabase/functions/sync-payment-session/index.ts supabase/functions/manage-account/index.ts supabase/functions/integration-status/index.ts supabase/functions/send-confirmation-email/index.ts supabase/functions/send-confirmation-sms/index.ts supabase/functions/send-reschedule-email/index.ts supabase/functions/send-telegram-notification/index.ts supabase/functions/verify-gcash-receipt/index.ts supabase/functions/telegram-webhook/index.ts supabase/functions/owner-email-notifications/index.ts",
     "check:audit": "npm audit --omit=dev --audit-level=moderate",
     "launch:check": "npm run check:js && npm run check:reliability && npm run check:pricing && npm run check:remittance && npm run check:security && npm run check:notifications && npm run check:functions && npm run check:audit",
-    "check:notifications": "node tools/check-owner-email-db.mjs && node tools/check-email-notification-ui.mjs && node tools/check-owner-email-client.mjs && npx --yes deno test supabase/functions/_shared/owner-email.test.ts"
+    "check:notifications": "node tools/check-owner-email-db.mjs && node tools/check-owner-email-schedule.mjs && node tools/check-email-notification-ui.mjs && node tools/check-owner-email-client.mjs && npx --yes deno test supabase/functions/_shared/owner-email.test.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.108.1",

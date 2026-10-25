@@ -1652,7 +1652,7 @@ tr:hover td { background: var(--bg2); }
       <div class="nav-item" data-s="gamemgr" data-perm="open_play" onclick="goto('gamemgr')"><span>&#127955;</span> Game Manager</div>
       <div class="nav-item" data-s="maintenance" data-perm="maintenance" onclick="goto('maintenance')"><span>&#128295;</span> Maintenance</div>
       <div class="nav-item" data-s="payments" data-perm="payments" onclick="goto('payments')"><span>&#128179;</span> Payments</div>
-      <div class="nav-item" data-s="notifications" data-perm="settings" onclick="goto('notifications')"><span>&#128231;</span> Email Notifications</div>
+      <div class="nav-item" data-s="notifications" data-perm="settings" onclick="goto('notifications')"><span>&#128276;</span> Telegram Notifications</div>
       <div class="nav-item" data-s="remittances" data-perm="remittances" onclick="goto('remittances')"><span>&#129534;</span> Remittances</div>
     </div>
     <div class="sb-section" data-perm="accounts">
@@ -2655,45 +2655,45 @@ tr:hover td { background: var(--bg2); }
       </div>
     </div>
 
-    <!-- OWNER EMAIL NOTIFICATIONS -->
+    <!-- OWNER TELEGRAM NOTIFICATIONS -->
     <div id="sec-notifications" class="adm-sec">
-      <div class="toolbar"><h2>📧 EMAIL NOTIFICATIONS</h2></div>
+      <div class="toolbar"><h2>🔔 TELEGRAM NOTIFICATIONS</h2></div>
       <div class="panel" style="max-width:760px;margin-bottom:20px">
         <h4>Booking alerts for you</h4>
         <p style="color:var(--text2);font-size:.86rem;line-height:1.6;margin:8px 0 18px">Choose where you receive court booking updates. These settings belong to your account. Customer confirmation emails continue separately.</p>
-        <form id="ownerEmailForm" novalidate onsubmit="saveOwnerEmailPreferences(event)" oninput="ownerEmailFormChanged()" onchange="ownerEmailFormChanged()">
-          <fieldset id="ownerEmailFields" disabled style="border:0;padding:0;margin:0;min-width:0">
-            <label style="display:flex;align-items:center;gap:10px;font-weight:700;margin-bottom:18px"><input type="checkbox" id="ownerEmailEnabled"> Enable email notifications</label>
+        <form id="ownerTelegramForm" novalidate onsubmit="saveOwnerTelegramPreferences(event)" oninput="ownerTelegramFormChanged()" onchange="ownerTelegramFormChanged()">
+          <fieldset id="ownerTelegramFields" disabled style="border:0;padding:0;margin:0;min-width:0">
+            <label style="display:flex;align-items:center;gap:10px;font-weight:700;margin-bottom:18px"><input type="checkbox" id="ownerTelegramEnabled"> Enable Telegram notifications</label>
             <div class="fg">
-              <label class="fl" id="ownerEmailRecipientsLabel" for="ownerEmailRecipients">Email addresses</label>
-              <textarea class="fi" id="ownerEmailRecipients" rows="3" placeholder="owner@example.com&#10;backup@example.com" aria-labelledby="ownerEmailRecipientsLabel" aria-describedby="ownerEmailRecipientsHelp" autocomplete="off" spellcheck="false" style="resize:vertical"></textarea>
-              <p id="ownerEmailRecipientsHelp" style="font-size:.78rem;color:var(--text2);line-height:1.5;margin-top:6px">One address per line. Put your primary email first, followed by up to two optional backup emails. Each saved address receives the selected alerts.</p>
+              <label class="fl" id="ownerTelegramRecipientsLabel" for="ownerTelegramRecipients">Telegram chat ID</label>
+              <input class="fi" id="ownerTelegramRecipients" type="text" placeholder="123456789 or -1001234567890" aria-describedby="ownerTelegramRecipientsHelp" autocomplete="off" spellcheck="false">
+              <p id="ownerTelegramRecipientsHelp" style="font-size:.78rem;color:var(--text2);line-height:1.5;margin-top:6px">Use your existing owner chat ID. Send /start to the booking bot (or in your group) to see its chat ID. Save settings, then send a test to check the destination. One enabled account manages each chat.</p>
             </div>
             <fieldset style="border:0;padding:0;margin:18px 0;min-width:0">
               <legend class="fl" style="margin-bottom:10px">Notify me about</legend>
               <div style="display:grid;gap:12px;font-size:.86rem">
-                <label style="display:flex;align-items:flex-start;gap:9px"><input type="checkbox" id="ownerEmailNew" checked style="margin-top:3px"><span><strong>New bookings</strong><br><span style="color:var(--text2)">A player has submitted a booking.</span></span></label>
-                <label style="display:flex;align-items:flex-start;gap:9px"><input type="checkbox" id="ownerEmailPending" checked style="margin-top:3px"><span><strong>Pending / payment review</strong><br><span style="color:var(--text2)">A booking needs your attention to review its payment.</span></span></label>
+                <label style="display:flex;align-items:flex-start;gap:9px"><input type="checkbox" id="ownerTelegramConfirmed" checked style="margin-top:3px"><span><strong>🟢 Automatically confirmed</strong><br><span style="color:var(--text2)">Automatic payment verification confirmed the booking. No action needed.</span></span></label>
+                <label style="display:flex;align-items:flex-start;gap:9px"><input type="checkbox" id="ownerTelegramPending" checked style="margin-top:3px"><span><strong>🟠 Pending booking</strong><br><span style="color:var(--text2)">A booking needs your attention to review its payment.</span></span></label>
               </div>
             </fieldset>
-            <p style="font-size:.8rem;color:var(--text2);line-height:1.6;margin-bottom:16px">A new pending booking gets one alert. If its payment later needs review, you may receive a separate review alert. There are no periodic reminders. Confirmation emails go to players.</p>
+            <p style="font-size:.8rem;color:var(--text2);line-height:1.6;margin-bottom:16px">Pending and automatically confirmed bookings have separate messages. A pending booking that later auto-confirms gets a new confirmation alert. Verification in progress and manual approvals do not generate automatic-confirmation alerts. No periodic reminders. Player confirmation emails continue separately.</p>
             <div style="display:flex;gap:10px;flex-wrap:wrap">
-              <button class="btn btn-p" id="ownerEmailSave" type="submit">Save settings</button>
-              <button class="btn btn-g" id="ownerEmailTest" type="button" disabled onclick="sendOwnerEmailTest()">Send Test Email</button>
+              <button class="btn btn-p" id="ownerTelegramSave" type="submit">Save settings</button>
+              <button class="btn btn-g" id="ownerTelegramTest" type="button" disabled onclick="sendOwnerTelegramTest()">Send Test Telegram</button>
             </div>
           </fieldset>
         </form>
-        <p id="ownerEmailSavedStatus" style="font-size:.8rem;color:var(--text2);margin-top:16px">Loading your saved settings…</p>
-        <p id="ownerEmailFeedback" role="status" aria-live="polite" aria-atomic="true" style="font-size:.84rem;line-height:1.5;margin-top:8px"></p>
-        <button class="btn btn-g btn-sm" id="ownerEmailReload" type="button" hidden onclick="reloadOwnerEmailPreferences()" style="display:none;margin-top:10px">Reload saved settings</button>
+        <p id="ownerTelegramSavedStatus" style="font-size:.8rem;color:var(--text2);margin-top:16px">Loading your saved settings…</p>
+        <p id="ownerTelegramFeedback" role="status" aria-live="polite" aria-atomic="true" style="font-size:.84rem;line-height:1.5;margin-top:8px"></p>
+        <button class="btn btn-g btn-sm" id="ownerTelegramReload" type="button" hidden onclick="reloadOwnerTelegramPreferences()" style="display:none;margin-top:10px">Reload saved settings</button>
       </div>
       <div class="panel" style="max-width:760px">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;margin-bottom:10px">
           <h4 style="margin:0">Recent delivery history</h4>
-          <button class="btn btn-g btn-sm" id="ownerEmailHistoryRefresh" type="button" onclick="refreshOwnerEmailHistory()">Refresh history</button>
+          <button class="btn btn-g btn-sm" id="ownerTelegramHistoryRefresh" type="button" onclick="refreshOwnerTelegramHistory()">Refresh history</button>
         </div>
-        <p style="font-size:.8rem;color:var(--text2);line-height:1.5;margin-bottom:14px">“Sent” means the email provider accepted the message. It does not confirm that it reached your inbox. Check your spam folder if an email is missing.</p>
-        <div id="ownerEmailHistory" aria-live="polite" aria-busy="false" style="display:grid;gap:10px"><p style="color:var(--text2);font-size:.84rem">Loading delivery history…</p></div>
+        <p style="font-size:.8rem;color:var(--text2);line-height:1.5;margin-bottom:14px">“Sent” means Telegram accepted the message, not that it was read. If delivery is uncertain, check your chat before retrying to avoid duplicates.</p>
+        <div id="ownerTelegramHistory" aria-live="polite" aria-busy="false" style="display:grid;gap:10px"><p style="color:var(--text2);font-size:.84rem">Loading delivery history…</p></div>
       </div>
     </div>
 
@@ -3742,9 +3742,9 @@ function setAdminReady() {
 /* ==============================================
    NAVIGATION
    ============================================== */
-const titles={dash:'Dashboard',bookings:'Bookings',payreview:'Payment Review',reports:'Reports',courts:'Courts',accounts:'Accounts',blocked:'Open Play',hosts:'Host Center',gamemgr:'Game Manager',maintenance:'Maintenance',payments:'Payments',notifications:'Email Notifications',remittances:'Remittances'};
+const titles={dash:'Dashboard',bookings:'Bookings',payreview:'Payment Review',reports:'Reports',courts:'Courts',accounts:'Accounts',blocked:'Open Play',hosts:'Host Center',gamemgr:'Game Manager',maintenance:'Maintenance',payments:'Payments',notifications:'Telegram Notifications',remittances:'Remittances'};
 const SECTION_PERM={dash:'dashboard',bookings:'bookings',payreview:'payment_review',reports:'reports',courts:'courts',accounts:'accounts',blocked:'open_play',hosts:'host_open_play',gamemgr:'open_play',maintenance:'maintenance',payments:'payments',notifications:'settings',remittances:'remittances'};
-const SECTION_LOADERS={dash:renderDash,bookings:renderBookings,payreview:renderPaymentReview,reports:renderReport,courts:renderCourts,accounts:renderAccounts,blocked:renderBlocked,hosts:renderHostCenter,gamemgr:renderGameManager,maintenance:renderMaintenance,payments:renderPaymentSettings,notifications:renderOwnerEmailNotifications,remittances:renderRemittances};
+const SECTION_LOADERS={dash:renderDash,bookings:renderBookings,payreview:renderPaymentReview,reports:renderReport,courts:renderCourts,accounts:renderAccounts,blocked:renderBlocked,hosts:renderHostCenter,gamemgr:renderGameManager,maintenance:renderMaintenance,payments:renderPaymentSettings,notifications:renderOwnerTelegramNotifications,remittances:renderRemittances};
 let _curSection=null;
 async function goto(s){
   // Block navigation to sections the current role can't access
@@ -6613,167 +6613,165 @@ async function savePricingTiers() {
 /* ==============================================
    PAYMENT SETTINGS
    ============================================== */
-/* OWNER EMAIL NOTIFICATIONS */
-let _ownerEmailSaved = null, _ownerEmailBusy = false, _ownerEmailLoading = false;
-let _ownerEmailLoadSeq = 0, _ownerEmailHistoryBusy = false;
-let _ownerEmailSaveUncertain = false;
+/* OWNER TELEGRAM NOTIFICATIONS */
+let _ownerTelegramSaved = null, _ownerTelegramBusy = false, _ownerTelegramLoading = false;
+let _ownerTelegramLoadSeq = 0, _ownerTelegramHistoryBusy = false;
+let _ownerTelegramSaveUncertain = false;
 
-function ownerEmailNormalizePreferences(row = {}) {
+function ownerTelegramNormalizePreferences(row = {}) {
   return {
-    emails: Array.isArray(row.emails) ? row.emails.map(email => String(email).trim()).filter(Boolean) : [],
+    chat_id: String(row.chat_id || '').trim(),
     enabled: row.enabled === true,
-    notify_new: row.notify_new !== false,
+    notify_auto_confirmed: row.notify_auto_confirmed !== false,
     notify_pending: row.notify_pending !== false,
   };
 }
-function ownerEmailDraft() {
+function ownerTelegramDraft() {
   return {
-    emails: $('ownerEmailRecipients').value.split(/\r?\n/).map(email => email.trim()).filter(Boolean),
-    enabled: $('ownerEmailEnabled').checked,
-    notify_new: $('ownerEmailNew').checked,
-    notify_pending: $('ownerEmailPending').checked,
+    chat_id: $('ownerTelegramRecipients').value.trim(),
+    enabled: $('ownerTelegramEnabled').checked,
+    notify_auto_confirmed: $('ownerTelegramConfirmed').checked,
+    notify_pending: $('ownerTelegramPending').checked,
   };
 }
-function ownerEmailIsDirty() {
-  return !_ownerEmailSaved || JSON.stringify(ownerEmailDraft()) !== JSON.stringify(_ownerEmailSaved);
+function ownerTelegramIsDirty() {
+  return !_ownerTelegramSaved || JSON.stringify(ownerTelegramDraft()) !== JSON.stringify(_ownerTelegramSaved);
 }
-function ownerEmailValidationMessage(draft) {
-  if (draft.emails.length > 3) return 'Use one primary email and no more than two backup emails.';
-  if (draft.emails.some(email => email.length > 254 || !/^[^\s@,;<>]+@[^\s@,;<>]+\.[^\s@,;<>]+$/.test(email))) return 'Enter a valid email address on each line.';
-  if (new Set(draft.emails.map(email => email.toLowerCase())).size !== draft.emails.length) return 'Use each email address only once.';
-  if (draft.enabled && !draft.emails.length) return 'Add your primary email before enabling notifications.';
-  if (draft.enabled && !draft.notify_new && !draft.notify_pending) return 'Choose at least one booking update before enabling notifications.';
+function ownerTelegramValidationMessage(draft) {
+  if (draft.chat_id && !/^-?[1-9][0-9]{0,19}$/.test(draft.chat_id)) return 'Enter a valid Telegram chat ID.';
+  if (draft.enabled && !draft.chat_id) return 'Add your Telegram chat ID before enabling alerts.';
+  if (draft.enabled && !draft.notify_auto_confirmed && !draft.notify_pending) return 'Choose at least one booking update before enabling notifications.';
   return '';
 }
-function ownerEmailFeedback(message, isError = false) {
-  const el = $('ownerEmailFeedback');
+function ownerTelegramFeedback(message, isError = false) {
+  const el = $('ownerTelegramFeedback');
   el.setAttribute('role', isError ? 'alert' : 'status');
   el.setAttribute('aria-live', isError ? 'assertive' : 'polite');
   el.style.color = isError ? 'var(--red)' : 'var(--text2)';
   el.textContent = message;
 }
-function ownerEmailUpdateControls() {
-  $('ownerEmailFields').disabled = _ownerEmailBusy || _ownerEmailLoading || _ownerEmailSaveUncertain || !_ownerEmailSaved;
-  $('ownerEmailTest').disabled = _ownerEmailBusy || _ownerEmailLoading || _ownerEmailSaveUncertain || !_ownerEmailSaved?.emails.length || ownerEmailIsDirty();
-  $('ownerEmailReload').hidden = !_ownerEmailSaveUncertain;
-  $('ownerEmailReload').style.display = _ownerEmailSaveUncertain ? '' : 'none';
-  $('ownerEmailReload').disabled = _ownerEmailBusy || _ownerEmailLoading;
-  $('ownerEmailSavedStatus').textContent = _ownerEmailSaved
-    ? `${_ownerEmailSaved.enabled ? 'Notifications enabled' : 'Notifications disabled'} · ${_ownerEmailSaved.emails.length} saved email address${_ownerEmailSaved.emails.length === 1 ? '' : 'es'}.`
-    : _ownerEmailLoading ? 'Loading your saved settings…' : 'Settings have not loaded. Retry this section.';
+function ownerTelegramUpdateControls() {
+  $('ownerTelegramFields').disabled = _ownerTelegramBusy || _ownerTelegramLoading || _ownerTelegramSaveUncertain || !_ownerTelegramSaved;
+  $('ownerTelegramTest').disabled = _ownerTelegramBusy || _ownerTelegramLoading || _ownerTelegramSaveUncertain || !_ownerTelegramSaved?.chat_id || ownerTelegramIsDirty();
+  $('ownerTelegramReload').hidden = !_ownerTelegramSaveUncertain;
+  $('ownerTelegramReload').style.display = _ownerTelegramSaveUncertain ? '' : 'none';
+  $('ownerTelegramReload').disabled = _ownerTelegramBusy || _ownerTelegramLoading;
+  $('ownerTelegramSavedStatus').textContent = _ownerTelegramSaved
+    ? `${_ownerTelegramSaved.enabled ? 'Notifications enabled' : 'Notifications disabled'} · Chat ${_ownerTelegramSaved.chat_id || 'not set'}.`
+    : _ownerTelegramLoading ? 'Loading your saved settings…' : 'Settings have not loaded. Retry this section.';
 }
-function ownerEmailApplyPreferences(row) {
-  _ownerEmailSaved = ownerEmailNormalizePreferences(row);
-  _ownerEmailSaveUncertain = false;
-  $('ownerEmailRecipients').value = _ownerEmailSaved.emails.join('\n');
-  $('ownerEmailEnabled').checked = _ownerEmailSaved.enabled;
-  $('ownerEmailNew').checked = _ownerEmailSaved.notify_new;
-  $('ownerEmailPending').checked = _ownerEmailSaved.notify_pending;
+function ownerTelegramApplyPreferences(row) {
+  _ownerTelegramSaved = ownerTelegramNormalizePreferences(row);
+  _ownerTelegramSaveUncertain = false;
+  $('ownerTelegramRecipients').value = _ownerTelegramSaved.chat_id;
+  $('ownerTelegramEnabled').checked = _ownerTelegramSaved.enabled;
+  $('ownerTelegramConfirmed').checked = _ownerTelegramSaved.notify_auto_confirmed;
+  $('ownerTelegramPending').checked = _ownerTelegramSaved.notify_pending;
 }
-function ownerEmailFormChanged() {
-  if (_ownerEmailSaveUncertain) return;
-  ownerEmailFeedback(ownerEmailIsDirty()
-    ? 'Unsaved changes. Save settings before sending a test email.'
-    : 'No unsaved changes. Test emails use your saved addresses.');
-  ownerEmailUpdateControls();
+function ownerTelegramFormChanged() {
+  if (_ownerTelegramSaveUncertain) return;
+  ownerTelegramFeedback(ownerTelegramIsDirty()
+    ? 'Unsaved changes. Save settings before sending a test message.'
+    : 'No unsaved changes. Test messages use your saved chat.');
+  ownerTelegramUpdateControls();
 }
-async function renderOwnerEmailNotifications() {
+async function renderOwnerTelegramNotifications() {
   if (!Auth.can('settings', sess.role)) return;
-  const seq = ++_ownerEmailLoadSeq;
-  _ownerEmailSaved = null;
-  _ownerEmailLoading = true;
-  ownerEmailFeedback('');
-  ownerEmailUpdateControls();
+  const seq = ++_ownerTelegramLoadSeq;
+  _ownerTelegramSaved = null;
+  _ownerTelegramLoading = true;
+  ownerTelegramFeedback('');
+  ownerTelegramUpdateControls();
   try {
-    const preferences = await DB.getOwnerEmailPreferences();
-    if (seq !== _ownerEmailLoadSeq) return;
-    ownerEmailApplyPreferences(preferences || {});
-    ownerEmailFeedback(_ownerEmailSaved.emails.length
-      ? 'Test emails go to your saved addresses, even when booking alerts are disabled.'
-      : 'Add your email addresses and save settings to send a test email.');
-    await refreshOwnerEmailHistory();
+    const preferences = await DB.getOwnerTelegramPreferences();
+    if (seq !== _ownerTelegramLoadSeq) return;
+    ownerTelegramApplyPreferences(preferences || {});
+    ownerTelegramFeedback(_ownerTelegramSaved.chat_id
+      ? 'Test messages go to your saved chat, even when booking alerts are disabled.'
+      : 'Add your Telegram chat ID and save settings to send a test message.');
+    await refreshOwnerTelegramHistory();
   } catch (error) {
-    if (seq === _ownerEmailLoadSeq) ownerEmailFeedback('Could not load your email notification settings. Please retry this section.', true);
+    if (seq === _ownerTelegramLoadSeq) ownerTelegramFeedback('Could not load your Telegram notification settings. Please retry this section.', true);
     throw error;
   } finally {
-    if (seq === _ownerEmailLoadSeq) {
-      _ownerEmailLoading = false;
-      ownerEmailUpdateControls();
+    if (seq === _ownerTelegramLoadSeq) {
+      _ownerTelegramLoading = false;
+      ownerTelegramUpdateControls();
     }
   }
 }
-async function reloadOwnerEmailPreferences() {
-  if (_ownerEmailBusy || _ownerEmailLoading) return;
-  try { await renderOwnerEmailNotifications(); }
+async function reloadOwnerTelegramPreferences() {
+  if (_ownerTelegramBusy || _ownerTelegramLoading) return;
+  try { await renderOwnerTelegramNotifications(); }
   catch (_) { /* The section already displays its read error and keeps Reload available. */ }
 }
-async function saveOwnerEmailPreferences(event) {
+async function saveOwnerTelegramPreferences(event) {
   event?.preventDefault();
-  if (!Auth.can('settings', sess.role) || _ownerEmailBusy || _ownerEmailLoading || _ownerEmailSaveUncertain || !_ownerEmailSaved) return;
-  const draft = ownerEmailDraft();
-  const validation = ownerEmailValidationMessage(draft);
-  if (validation) { ownerEmailFeedback(validation, true); return; }
-  _ownerEmailBusy = true;
-  $('ownerEmailSave').textContent = 'Saving…';
-  ownerEmailFeedback('Saving your settings…');
-  ownerEmailUpdateControls();
+  if (!Auth.can('settings', sess.role) || _ownerTelegramBusy || _ownerTelegramLoading || _ownerTelegramSaveUncertain || !_ownerTelegramSaved) return;
+  const draft = ownerTelegramDraft();
+  const validation = ownerTelegramValidationMessage(draft);
+  if (validation) { ownerTelegramFeedback(validation, true); return; }
+  _ownerTelegramBusy = true;
+  $('ownerTelegramSave').textContent = 'Saving…';
+  ownerTelegramFeedback('Saving your settings…');
+  ownerTelegramUpdateControls();
   try {
-    const saved = await DB.saveOwnerEmailPreferences(draft);
-    ownerEmailApplyPreferences(Array.isArray(saved?.emails) ? saved : draft);
-    ownerEmailFeedback('Email notification settings saved.');
+    const saved = await DB.saveOwnerTelegramPreferences(draft);
+    ownerTelegramApplyPreferences(typeof saved?.chat_id === 'string' ? saved : draft);
+    ownerTelegramFeedback('Telegram notification settings saved.');
   } catch (error) {
-    _ownerEmailSaveUncertain = error?.code === 'OWNER_EMAIL_SAVE_UNCERTAIN';
-    ownerEmailFeedback(_ownerEmailSaveUncertain
+    _ownerTelegramSaveUncertain = error?.code === 'OWNER_TELEGRAM_SAVE_UNCERTAIN';
+    ownerTelegramFeedback(_ownerTelegramSaveUncertain
       ? 'The save response was interrupted. Your settings may already have been saved. Reload saved settings before trying again.'
       : 'Could not save your settings. Your changes are still here; please try again.', true);
   } finally {
-    _ownerEmailBusy = false;
-    $('ownerEmailSave').textContent = 'Save settings';
-    ownerEmailUpdateControls();
+    _ownerTelegramBusy = false;
+    $('ownerTelegramSave').textContent = 'Save settings';
+    ownerTelegramUpdateControls();
   }
 }
-async function sendOwnerEmailTest() {
-  if (!Auth.can('settings', sess.role) || _ownerEmailBusy || _ownerEmailLoading || _ownerEmailSaveUncertain) return;
-  if (!_ownerEmailSaved || ownerEmailIsDirty()) {
-    ownerEmailFeedback('Save your changes before sending a test email.', true);
+async function sendOwnerTelegramTest() {
+  if (!Auth.can('settings', sess.role) || _ownerTelegramBusy || _ownerTelegramLoading || _ownerTelegramSaveUncertain) return;
+  if (!_ownerTelegramSaved || ownerTelegramIsDirty()) {
+    ownerTelegramFeedback('Save your changes before sending a test message.', true);
     return;
   }
-  if (!_ownerEmailSaved.emails.length) {
-    ownerEmailFeedback('Add an email address and save settings before sending a test.', true);
+  if (!_ownerTelegramSaved.chat_id) {
+    ownerTelegramFeedback('Add an Telegram chat ID and save settings before sending a test.', true);
     return;
   }
-  _ownerEmailBusy = true;
-  $('ownerEmailTest').textContent = 'Requesting test…';
-  ownerEmailFeedback('Requesting a test email to your saved addresses…');
-  ownerEmailUpdateControls();
+  _ownerTelegramBusy = true;
+  $('ownerTelegramTest').textContent = 'Requesting test…';
+  ownerTelegramFeedback('Requesting a test message to your saved chat…');
+  ownerTelegramUpdateControls();
   try {
-    const result = await DB.sendOwnerEmailTest();
+    const result = await DB.sendOwnerTelegramTest();
     if (result?.status === 'failed' || result?.ok === false) {
-      ownerEmailFeedback('The test email could not be sent. Check your saved addresses and try again.', true);
+      ownerTelegramFeedback('The test message could not be sent. Check your saved chat and try again.', true);
     } else if (result?.status === 'skipped') {
-      ownerEmailFeedback('No test email was sent. Check your saved addresses and try again.', true);
+      ownerTelegramFeedback('No test message was sent. Check your saved chat and try again.', true);
     } else if (result?.status === 'sent') {
-      ownerEmailFeedback('Test email accepted by the email provider. Check your saved inboxes and spam folders.');
+      ownerTelegramFeedback('Test message accepted by Telegram. Check your Telegram chat.');
     } else {
-      ownerEmailFeedback('Test email requested. Refresh delivery history to check its progress.');
+      ownerTelegramFeedback('Test message requested. Refresh delivery history to check its progress.');
     }
-    await refreshOwnerEmailHistory();
+    await refreshOwnerTelegramHistory();
   } catch (error) {
     const uncertain = error?.name === 'AbortError' || /timed out|delivery outcome may be unknown/i.test(error?.message || '');
-    ownerEmailFeedback(uncertain
-      ? 'The test response was interrupted. The email may still have been sent. Check your saved inboxes and spam folders before sending another test.'
-      : 'Could not request the test email. Please try again.', true);
+    ownerTelegramFeedback(uncertain
+      ? 'The test response was interrupted. The message may still have been sent. Check your Telegram chat before sending another test.'
+      : 'Could not request the test message. Please try again.', true);
   } finally {
-    _ownerEmailBusy = false;
-    $('ownerEmailTest').textContent = 'Send Test Email';
-    ownerEmailUpdateControls();
+    _ownerTelegramBusy = false;
+    $('ownerTelegramTest').textContent = 'Send Test Telegram';
+    ownerTelegramUpdateControls();
   }
 }
-function ownerEmailLogHtml(rows) {
-  const eventNames = { new: 'New booking', new_booking: 'New booking', pending: 'Payment review needed', booking_pending: 'Payment review needed', payment_review_needed: 'Payment review needed', test: 'Test email' };
+function ownerTelegramLogHtml(rows) {
+  const eventNames = { auto_confirmed: '🟢 Automatically confirmed', pending: '🟠 Pending booking', test: 'Test Telegram message' };
   const statusNames = { pending: 'Pending', sending: 'Sending', sent: 'Sent', failed: 'Failed', skipped: 'Skipped' };
-  const descriptions = { pending: 'Waiting to send.', sending: 'Delivery is in progress.', sent: 'Accepted by the email provider.', failed: 'Could not send this message. Check your saved addresses or try a test email.', skipped: 'No email was sent for this update.' };
-  if (!rows.length) return '<p style="color:var(--text2);font-size:.84rem">No delivery history yet. Save your addresses and use Send Test Email to check them.</p>';
+  const descriptions = { pending: 'Waiting to send.', sending: 'Delivery is in progress.', sent: 'Accepted by Telegram.', failed: 'Could not send this message. Check your Telegram chat before trying again; delivery may be uncertain.', skipped: 'No message was sent for this update.' };
+  if (!rows.length) return '<p style="color:var(--text2);font-size:.84rem">No delivery history yet. Save your chat ID and use Send Test Telegram to check them.</p>';
   return rows.slice(0, 30).map(row => {
     const status = row.status === 'queued' ? 'pending' : Object.prototype.hasOwnProperty.call(statusNames, row.status) ? row.status : '';
     const date = new Date(row.sent_at || row.created_at || '');
@@ -6786,25 +6784,25 @@ function ownerEmailLogHtml(rows) {
     </article>`;
   }).join('');
 }
-async function refreshOwnerEmailHistory() {
-  if (!Auth.can('settings', sess.role) || _ownerEmailHistoryBusy) return;
-  _ownerEmailHistoryBusy = true;
-  const body = $('ownerEmailHistory'), button = $('ownerEmailHistoryRefresh');
+async function refreshOwnerTelegramHistory() {
+  if (!Auth.can('settings', sess.role) || _ownerTelegramHistoryBusy) return;
+  _ownerTelegramHistoryBusy = true;
+  const body = $('ownerTelegramHistory'), button = $('ownerTelegramHistoryRefresh');
   button.disabled = true;
   body.setAttribute('aria-busy', 'true');
   try {
-    const rows = await DB.getOwnerEmailNotificationLog();
+    const rows = await DB.getOwnerTelegramNotificationLog();
     if (!Array.isArray(rows)) throw new Error('Delivery history unavailable');
-    body.innerHTML = ownerEmailLogHtml(rows);
+    body.innerHTML = ownerTelegramLogHtml(rows);
   } catch (_) {
     body.innerHTML = '<p role="alert" style="color:var(--red);font-size:.84rem">Could not load delivery history. Use Refresh history to try again.</p>';
   } finally {
-    _ownerEmailHistoryBusy = false;
+    _ownerTelegramHistoryBusy = false;
     button.disabled = false;
     body.setAttribute('aria-busy', 'false');
   }
 }
-/* END OWNER EMAIL NOTIFICATIONS */
+/* END OWNER TELEGRAM NOTIFICATIONS */
 
 async function renderIntegrationStatus() {
   const body = $('integrationStatusBody');
@@ -9543,6 +9541,6 @@ async function checkAgreementGate(session) {
 </script>
 
 <script src="supabase.min.js"></script>
-<script src="supabase-config.js?v=20261017-owner-email"></script>
+<script src="supabase-config.js?v=20261025-owner-telegram"></script>
 </body>
 </html>

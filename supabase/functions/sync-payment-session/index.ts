@@ -186,6 +186,7 @@ async function updateBookingPayment(
   }
   if (normalized === "paid") {
     bookingUpdate.status = "confirmed";
+    bookingUpdate.automatic_confirmation_source = "paymongo";
     if (paidAt) bookingUpdate.paid_at = paidAt;
   }
   if (normalized === "failed") bookingUpdate.status = "cancelled";
@@ -204,7 +205,7 @@ async function updateOpenPlayPayment(db: any, registrationId: string, normalized
   const status = normalized === "paid" ? "paid" : normalized === "failed" ? "rejected" : "pending";
   const { error } = await db
     .from("open_play_registrations")
-    .update({ payment_status: status })
+    .update({ payment_status: status, ...(normalized === "paid" ? { automatic_confirmation_source: "paymongo" } : {}) })
     .eq("id", registrationId);
   if (error) throw error;
 }

@@ -7711,7 +7711,7 @@ async function submitBookingLegacy(e) {
     }
     bookingSaved = true;
 
-    // Owner email alerts are queued by the database when the booking is saved.
+    // Owner Telegram alerts are queued by the database when the booking is saved.
     DB.notifyBookingSubmitted(booking).catch(() => {});
 
     // ── Run OCR against the saved booking ────────────────────────────────
@@ -9365,7 +9365,7 @@ async function submitOpenPlay() {
       receiptVerifiedAt: receiptResult?.receiptVerifiedAt || null,
     });
 
-    // Owner email alerts are queued by the registration's database trigger.
+    // Owner Telegram alerts are queued by the registration's database trigger.
 
     if (regPayStatus === 'paid') {
       DB.sendOpenPlayConfirmationEmail(registration, { allowFailure: true }).catch(() => {});

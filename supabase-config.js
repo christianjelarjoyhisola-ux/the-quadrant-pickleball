@@ -1268,24 +1268,24 @@ window.DB = {
   async notifyBookingSubmitted() { return { ok: true, handledByDatabase: true }; },
   async notifyBookingUpdate() { return { ok: true, handledByDatabase: true }; },
 
-  async getOwnerEmailPreferences() {
+  async getOwnerTelegramPreferences() {
     const { data: authData, error: authError } = await _withTimeout(_sb.auth.getUser(), 15000, 'Sign-in check');
     if (authError || !authData?.user) throw authError || new Error('Please sign in again.');
-    const { data, error } = await _withTimeout(_sb.from('owner_email_preferences').select('emails,enabled,notify_new,notify_pending,updated_at').eq('user_id', authData.user.id).maybeSingle(), 15000, 'Email settings');
+    const { data, error } = await _withTimeout(_sb.from('owner_telegram_preferences').select('chat_id,enabled,notify_auto_confirmed,notify_pending,updated_at').eq('user_id', authData.user.id).maybeSingle(), 15000, 'Telegram settings');
     if (error) throw error;
-    return data || { emails: [], enabled: false, notify_new: true, notify_pending: true };
+    return data || { chat_id: '', enabled: false, notify_auto_confirmed: true, notify_pending: true };
   },
 
-  async saveOwnerEmailPreferences(preferences) {
-    const emails = [...new Set((preferences.emails || []).map(email => String(email).trim().toLowerCase()).filter(Boolean))];
-    if (emails.length > 3 || emails.some(email => email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) throw new Error('Enter up to three valid email addresses.');
+  async saveOwnerTelegramPreferences(preferences) {
+    const chat_id = String(preferences.chat_id || '').trim();
+    if (chat_id && !/^-?[1-9][0-9]{0,19}$/.test(chat_id)) throw new Error('Enter a valid Telegram chat ID.');
     const enabled = !!preferences.enabled;
-    const events = { notify_new: !!preferences.notify_new, notify_pending: !!preferences.notify_pending };
-    if (enabled && (!emails.length || !Object.values(events).some(Boolean))) throw new Error('Choose an email address and at least one alert type.');
+    const events = { notify_auto_confirmed: !!preferences.notify_auto_confirmed, notify_pending: !!preferences.notify_pending };
+    if (enabled && (!chat_id || !Object.values(events).some(Boolean))) throw new Error('Choose a Telegram chat and at least one alert type.');
     const { data: authData, error: authError } = await _withTimeout(_sb.auth.getUser(), 15000, 'Sign-in check');
     if (authError || !authData?.user) throw authError || new Error('Please sign in again.');
     try {
-      const { data, error } = await _withTimeout(_sb.from('owner_email_preferences').upsert({ user_id: authData.user.id, emails, enabled, ...events }).select('emails,enabled,notify_new,notify_pending,updated_at').single(), 15000, 'Saving email settings');
+      const { data, error } = await _withTimeout(_sb.from('owner_telegram_preferences').upsert({ user_id: authData.user.id, chat_id, enabled, ...events }).select('chat_id,enabled,notify_auto_confirmed,notify_pending,updated_at').single(), 15000, 'Saving Telegram settings');
       if (error) throw error;
       return data;
     } catch (error) {
@@ -1294,33 +1294,33 @@ window.DB = {
         || (!error?.code && /timed\s*out|timeout|fetch|network|abort/i.test(message));
       if (uncertainTransport) {
         const uncertain = new Error('Saving could not be confirmed. The result is unknown; reload saved settings before trying again.');
-        uncertain.code = 'OWNER_EMAIL_SAVE_UNCERTAIN';
+        uncertain.code = 'OWNER_TELEGRAM_SAVE_UNCERTAIN';
         throw uncertain;
       }
       throw error;
     }
   },
 
-  async getOwnerEmailNotificationLog() {
-    const { data, error } = await _withTimeout(_sb.rpc('get_owner_email_notification_log', {}, { get: true }), 15000, 'Email delivery history');
+  async getOwnerTelegramNotificationLog() {
+    const { data, error } = await _withTimeout(_sb.rpc('get_owner_telegram_notification_log', {}, { get: true }), 15000, 'Telegram delivery history');
     if (error) throw error;
     return Array.isArray(data) ? data : [];
   },
 
-  async sendOwnerEmailTest() {
+  async sendOwnerTelegramTest() {
     const { data, error } = await _withTimeout(_sb.auth.getSession(), PB_EDGE_REQUEST_TIMEOUT_MS, 'Sign-in check');
     if (error || !data?.session?.access_token) throw error || new Error('Please sign in again.');
     // A user-requested test is a send, so do not retry an uncertain response.
     return _withTimeout((async () => {
-    const response = await _fetchWithTimeout(`${SUPABASE_URL}/functions/v1/owner-email-notifications`, {
+    const response = await _fetchWithTimeout(`${SUPABASE_URL}/functions/v1/owner-telegram-notifications`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', apikey: SUPABASE_ANON_KEY, Authorization: `Bearer ${data.session.access_token}` },
       body: JSON.stringify({ action: 'test' }),
     }, 25000);
     const result = await response.json().catch(() => ({}));
-    if (!response.ok || result.ok === false) throw new Error(result.error || 'Could not request the test email. Check the delivery history before trying again.');
+    if (!response.ok || result.ok === false) throw new Error(result.error || 'Could not request the test Telegram message. Check the delivery history before trying again.');
     return result;
-    })(), 25000, 'Test email request (delivery outcome may be unknown)');
+    })(), 25000, 'Test Telegram message request (delivery outcome may be unknown)');
   },
 
   async getIntegrationStatus() {
@@ -2350,17 +2350,17 @@ window.DB = {
     async sendRescheduleEmail() { return { ok: true, skipped: true, reason: 'Local data mode' }; },
     async notifyBookingSubmitted() { return { ok: true, skipped: true, reason: 'Local data mode' }; },
     async notifyBookingUpdate() { return { ok: true, skipped: true, reason: 'Local data mode' }; },
-    async getOwnerEmailPreferences() {
-      return readDb().ownerEmailPreferences || { emails: [], enabled: false, notify_new: true, notify_pending: true };
+    async getOwnerTelegramPreferences() {
+      return readDb().ownerTelegramPreferences || { chat_id: '', enabled: false, notify_auto_confirmed: true, notify_pending: true };
     },
-    async saveOwnerEmailPreferences(preferences) {
+    async saveOwnerTelegramPreferences(preferences) {
       const db = readDb();
-      db.ownerEmailPreferences = { ...preferences, updated_at: new Date().toISOString() };
+      db.ownerTelegramPreferences = { ...preferences, updated_at: new Date().toISOString() };
       writeDb(db);
-      return db.ownerEmailPreferences;
+      return db.ownerTelegramPreferences;
     },
-    async getOwnerEmailNotificationLog() { return []; },
-    async sendOwnerEmailTest() { return { ok: true, status: 'skipped', message: 'Demo mode: no email was sent.' }; },
+    async getOwnerTelegramNotificationLog() { return []; },
+    async sendOwnerTelegramTest() { return { ok: true, status: 'skipped', message: 'Demo mode: no Telegram message was sent.' }; },
     async getIntegrationStatus() {
       return {
         ok: true,
@@ -2368,7 +2368,7 @@ window.DB = {
         services: [
           { id: 'email', label: 'Email confirmations', configured: false, required: ['RESEND_API_KEY'], missing: ['RESEND_API_KEY'], note: 'Local data mode' },
           { id: 'sms', label: 'SMS confirmations', configured: false, required: ['SMS_API_PH_API_KEY'], missing: ['SMS_API_PH_API_KEY'], note: 'Local data mode' },
-          { id: 'owner_email', label: 'Owner email alerts', configured: false, required: ['RESEND_API_KEY', 'EMAIL_FROM', 'OWNER_NOTIFICATION_WORKER_SECRET'], missing: [], note: 'Local demo: no email is sent.' },
+          { id: 'owner_telegram', label: 'Owner Telegram alerts', configured: false, required: ['TELEGRAM_BOT_TOKEN', 'OWNER_NOTIFICATION_WORKER_SECRET'], missing: [], note: 'Local demo: no Telegram message is sent.' },
           { id: 'payments', label: 'PayMongo checkout', configured: false, required: ['PAYMONGO_SECRET_KEY', 'PAYMENT_SUCCESS_URL', 'PAYMENT_CANCEL_URL'], missing: ['PAYMONGO_SECRET_KEY', 'PAYMENT_SUCCESS_URL', 'PAYMENT_CANCEL_URL'], note: 'Local data mode' },
           { id: 'ocr', label: 'Receipt OCR', configured: false, required: ['GOOGLE_VISION_API_KEY or OCRSPACE_API_KEY'], missing: ['GOOGLE_VISION_API_KEY or OCRSPACE_API_KEY'], note: 'Local data mode' },
           { id: 'service_role', label: 'Server database access', configured: false, required: ['SERVICE_ROLE_KEY or SUPABASE_SERVICE_ROLE_KEY'], missing: ['SERVICE_ROLE_KEY or SUPABASE_SERVICE_ROLE_KEY'], note: 'Local data mode' },

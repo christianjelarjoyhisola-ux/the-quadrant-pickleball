@@ -332,7 +332,7 @@ Deno.serve(async (req) => {
       if (openPlayRegistrationId) {
         const { error: opUpdateErr } = await db
           .from("open_play_registrations")
-          .update({ payment_status: normalized === "paid" ? "paid" : normalized === "failed" ? "rejected" : "pending" })
+          .update({ payment_status: normalized === "paid" ? "paid" : normalized === "failed" ? "rejected" : "pending", ...(normalized === "paid" ? { automatic_confirmation_source: "paymongo" } : {}) })
           .eq("id", openPlayRegistrationId);
         if (opUpdateErr) throw opUpdateErr;
         if (normalized === "paid") {
@@ -352,6 +352,7 @@ Deno.serve(async (req) => {
         };
         if (normalized === "paid") {
           bookingUpdate.status = "confirmed";
+          bookingUpdate.automatic_confirmation_source = "paymongo";
           bookingUpdate.paid_at = paidAtIso;
         }
         if (normalized === "failed") bookingUpdate.status = "cancelled";

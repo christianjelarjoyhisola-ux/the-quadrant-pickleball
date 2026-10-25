@@ -1324,7 +1324,7 @@ Deno.serve(async (req) => {
       raw_ocr_text: ocrText || null,
     });
 
-    // Saved booking state changes enqueue private owner email notifications in SQL.
+    // Saved booking state changes enqueue private owner Telegram notifications in SQL.
 
     return json({
       ok: true,

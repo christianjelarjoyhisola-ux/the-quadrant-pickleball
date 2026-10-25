@@ -5,6 +5,25 @@ import {
 } from "./owner-email.ts";
 
 type Row = Record<string, any>;
+export async function verifyTelegramWebhookSecret(
+  actual: string,
+  expected: string,
+): Promise<boolean> {
+  // The original installation allowed 16-character webhook secrets. Preserve
+  // that contract; the queue worker continues to require 32 characters.
+  const digest = async (value: string) =>
+    Array.from(
+      new Uint8Array(
+        await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)),
+      ),
+      (byte) => byte.toString(16).padStart(2, "0"),
+    ).join("");
+  const expectedHash = expected
+    ? await digest(expected)
+    : "112b4b58f013ad1472958733b614900386aecefabc3dfd97c8fdefc14fe50648";
+  return Boolean(actual) && (!expected || expected.length >= 16) &&
+    await constantTimeSecret(await digest(actual), expectedHash);
+}
 export type Dependencies = {
   db: any;
   env: (key: string) => string;

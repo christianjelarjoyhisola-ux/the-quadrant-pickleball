@@ -1,3 +1,5 @@
+> Historical setup: owner email alerts are replaced by Telegram. Use [TELEGRAM_OWNER_ALERTS.md](TELEGRAM_OWNER_ALERTS.md). Player confirmation emails remain enabled. Do not rerun the old owner-email deployment steps.
+
 # Owner booking email alerts
 
 Admin > Email Notifications lets each system owner or court owner save a primary

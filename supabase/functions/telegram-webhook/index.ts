@@ -1,6 +1,9 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
-import { constantTimeSecret } from "../_shared/owner-email.ts";
-import { sendTelegram, validChat } from "../_shared/owner-telegram.ts";
+import {
+  sendTelegram,
+  validChat,
+  verifyTelegramWebhookSecret,
+} from "../_shared/owner-telegram.ts";
 
 // /start reveals only this chat's ID. Booking access is granted exclusively by
 // the authenticated owner's saved Admin settings, never by a public setup code.
@@ -17,19 +20,7 @@ Deno.serve(async (req) => {
   const env = (name: string) => (Deno.env.get(name) || "").trim();
   const secret = req.headers.get("X-Telegram-Bot-Api-Secret-Token") || "";
   const expected = env("TELEGRAM_WEBHOOK_SECRET");
-  // Retain compatibility with the previously installed Quadrant webhook secret.
-  // A new deployment may override it with an explicit 32+ character secret.
-  const digest = Array.from(
-    new Uint8Array(
-      await crypto.subtle.digest("SHA-256", new TextEncoder().encode(secret)),
-    ),
-    (x) => x.toString(16).padStart(2, "0"),
-  ).join("");
-  const authorized = expected
-    ? await constantTimeSecret(secret, expected)
-    : Boolean(secret) &&
-      digest ===
-        "112b4b58f013ad1472958733b614900386aecefabc3dfd97c8fdefc14fe50648";
+  const authorized = await verifyTelegramWebhookSecret(secret, expected);
   if (!authorized) return json({ ok: false }, 401);
   try {
     const update = await req.json();

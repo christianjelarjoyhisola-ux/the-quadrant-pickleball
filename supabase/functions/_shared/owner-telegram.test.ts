@@ -1,3 +1,4 @@
+import { verifyTelegramWebhookSecret } from "./owner-telegram.ts";
 import {
   buildTelegram,
   handleOwnerTelegram,
@@ -435,4 +436,22 @@ Deno.test("Tests require owner authentication and rate limit, using only saved c
   f.setTestAllowed(false);
   assert.equal((await handleOwnerTelegram(req(), f.deps)).status, 429);
   assert.equal(f.sends.length, 1);
+});
+
+Deno.test("Webhook secrets preserve legacy lengths and reject incorrect credentials", async () => {
+  for (
+    const expected of [
+      "legacy-secret-16x",
+      "a-new-secret-of-at-least-32-characters",
+    ]
+  ) {
+    assert.equal(await verifyTelegramWebhookSecret(expected, expected), true);
+    assert.equal(
+      await verifyTelegramWebhookSecret(expected + "wrong", expected),
+      false,
+    );
+  }
+  assert.equal(await verifyTelegramWebhookSecret("", ""), false);
+  assert.equal(await verifyTelegramWebhookSecret("short", "short"), false);
+  assert.equal(await verifyTelegramWebhookSecret("unknown-token", ""), false);
 });

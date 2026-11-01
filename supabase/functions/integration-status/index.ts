@@ -56,11 +56,11 @@ function receiptOcrService(): ServiceStatus {
   };
 }
 
-function ownerEmailService(): ServiceStatus {
+function ownerTelegramService(): ServiceStatus {
   const status = service(
-    "owner_email", "Owner email notifications",
-    ["RESEND_API_KEY", "EMAIL_FROM", "OWNER_NOTIFICATION_WORKER_SECRET"], ["APP_ADMIN_URL"],
-    "Owners save private email recipients in Admin. Delivery requires the scheduled queue worker; sent means provider accepted, not confirmed inbox delivery.",
+    "owner_telegram", "Owner Telegram notifications",
+    ["TELEGRAM_BOT_TOKEN", "OWNER_NOTIFICATION_WORKER_SECRET"], ["APP_ADMIN_URL"],
+    "Owners save a private Telegram chat ID in Admin. Pending and automatically confirmed alerts use separate events. Sent means Telegram accepted the message.",
   );
   if ((Deno.env.get("OWNER_NOTIFICATION_WORKER_SECRET") || "").trim().length < 32) {
     status.configured = false;
@@ -82,7 +82,7 @@ Deno.serve(async (req) => {
   const services: ServiceStatus[] = [
     service("email", "Email confirmations", ["RESEND_API_KEY"], ["EMAIL_FROM"]),
     service("sms", "SMS confirmations", ["SMS_API_PH_API_KEY"], [], "Sends confirmed booking texts through SMS API PH."),
-    ownerEmailService(),
+    ownerTelegramService(),
     service("payments", "PayMongo checkout", ["PAYMONGO_SECRET_KEY", "PAYMENT_SUCCESS_URL", "PAYMENT_CANCEL_URL"], ["PAYMENT_WEBHOOK_SECRET"]),
     receiptOcrService(),
     {

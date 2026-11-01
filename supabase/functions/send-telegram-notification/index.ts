@@ -5,7 +5,7 @@ Deno.serve((req) =>
       ok: true,
       retired: true,
       skipped: true,
-      reason: "Owner alerts have moved to private email notifications.",
+      reason: "Owner Telegram alerts are queued from saved booking events.",
     }),
     {
       status: 200,
